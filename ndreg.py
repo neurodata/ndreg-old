@@ -10,10 +10,11 @@ import SimpleITK as sitk
 import sys, os, math, glob, subprocess, shutil, landmarks
 from numpy import mat, array, dot
 
+scriptDirPath = os.path.dirname(os.path.realpath(__file__))+"/"
+
 dimension = 3
 vectorComponentType = sitk.sitkFloat32
 vectorType = sitk.sitkVectorFloat32
-
 identityAffine = [1,0,0,0,1,0,0,0,1,0,0,0]
 identityDirection = [1,0,0,0,1,0,0,0,1]
 zeroOrigin = [0]*dimension
@@ -92,12 +93,15 @@ def imgWrite(img, path):
     """
     Write sitk image to path.
     """
+
     sitk.WriteImage(img, path)
+    #sitk.ImageFileWriter().Execute(img, path, False)
 
     # Reformat files to be compatible with CIS Software
     ext = os.path.splitext(path)[1].lower()
     if ext in [".img",".hdr"]:
-        imgReformat(path, path)
+        ###imgReformat(path, path)
+        pass
     elif ext == ".vtk":
         mapReformat(path, path)
         
@@ -251,9 +255,47 @@ def imgApplyAffine(inPath, outPath, affine, useNearestNeighborInterpolation=Fals
 
     return outPath
 
+def fieldApplyField(inPath, fieldPath, outPath):
+    inField = sitk.Cast(imgRead(inPath), sitk.sitkVectorFloat64)
+    field = sitk.Cast(imgRead(fieldPath), sitk.sitkVectorFloat64)
+    
+    size = list(inField.GetSize())
+    spacing = list(inField.GetSpacing())
+
+    # Create transform for input field
+    inTransform = sitk.DisplacementFieldTransform(dimension)
+    inTransform.SetDisplacementField(inField)
+    inTransform.SetInterpolator(sitk.sitkLinear)
+
+    # Create transform for field
+    transform = sitk.DisplacementFieldTransform(dimension)
+    transform.SetDisplacementField(field)
+    transform.SetInterpolator(sitk.sitkLinear)
+    
+    # Combine thransforms
+    outTransform = sitk.Transform()
+    outTransform.AddTransform(transform)
+    outTransform.AddTransform(inTransform)
+
+    # Get output displacement field
+    outField = sitk.TransformToDisplacementFieldFilter().Execute(outTransform, vectorType, size, zeroOrigin, spacing, identityDirection)    
+    #outFieldGenerator = sitk.TransformToDisplacementFieldFilter()
+    #outFieldGenerator.SetSize(size)
+    #outField = outFieldGenerator.Execute(outTransform)
+    
+
+    # Write output field
+    (outPath, outDirPath) = getOutPaths(inPath, outPath)    
+    imgWrite(outField, outPath)
+
+    return outPath
+
 def imgApplyField(inPath, fieldPath, outPath, useNearestNeighborInterpolation=False, size=[]):
+    """
+    img \circ field
+    """
     inImg = imgRead(inPath)
-    field = imgRead(fieldPath)
+    field = sitk.Cast(imgRead(fieldPath), sitk.sitkVectorFloat64)
 
     # Set size
     if size == []:
@@ -276,6 +318,8 @@ def imgApplyField(inPath, fieldPath, outPath, useNearestNeighborInterpolation=Fa
     # Write output image
     (outPath, outDirPath) = getOutPaths(inPath, outPath)    
     imgWrite(outImg, outPath)
+
+    return outPath
     
 def affineToField(affine, size, spacing, outPath):
     """
@@ -436,6 +480,21 @@ def imgAffine(inPath, refPath, outPath, useNearestNeighborInterpolation=False, u
 
     return affine
 
+
+def imgMetamorphosis(inPath, refPath, outPath, alpha=0.01, beta=0.05, useNearestNeighborInterpolation=False, useBiasCorrection=False):
+    """
+    Performs Metamorphic LDDMM between input and refereence images
+    """
+    if(not useBiasCorrection): beta = -1.0
+
+    (outPath, outDirPath) = getOutPaths(inPath, outPath)    
+    fieldPath = outDirPath+"field.vtk"
+    command = scriptDirPath+"metamorphosis/bin/metamorphosis --input {0} --reference {1} --output {2} --alpha {3} --beta {4} --displacement {5} --steps 2 --verbose".format(inPath, refPath, outPath, alpha, beta, fieldPath)
+    os.system(command)
+
+    return fieldPath
+
+
 def imgRegistration(inImgPath, refImgPath, outDirPath, useNearestNeighborInterpolation=False):
     (outPath, outDirPath) = getOutPaths(inImgPath, outDirPath)
 
@@ -467,6 +526,7 @@ def imgRegistration(inImgPath, refImgPath, outDirPath, useNearestNeighborInterpo
     # Do affine registration
     print("...Affine Registration")
     affineDirPath = outDirPath + "2_affine/"
+
     affine = imgAffine(rigidDirPath+inImgFileName, origDirPath+refImgFileName, affineDirPath, useNearestNeighborInterpolation, False) # Do affine registration
 
     # Combine rigid and affine transforms and write result to file
@@ -485,11 +545,20 @@ def imgRegistration(inImgPath, refImgPath, outDirPath, useNearestNeighborInterpo
     # Apply combined transform to original input image and generate checkerboard image between original input image and reference image
     imgApplyField(origDirPath+inImgFileName, fieldPath, affineDirPath, useNearestNeighborInterpolation)
     imgCheckerBoard(affineDirPath+inImgFileName, origDirPath+refImgFileName, affineDirPath+"checkerboard.img")
+
+    # Do diffeomorphic registration
+    print("...Diffeomorphic Registrration")
+    diffeoDirPath = outDirPath + "3_diffeo/"
+    alpha = 0.01
+    beta  = 0.05
+    #imgMetamorphosis(affineDirPath+inImgFileName, origDirPath+refImgFileName, diffeoDirPath, alpha, beta, useNearestNeighborInterpolation, False)
+    fieldApplyField(diffeoDirPath+"field.vtk", affineDirPath+"field.vtk", diffeoDirPath+"combinedField.vtk")
+    imgApplyField(origDirPath+inImgFileName, diffeoDirPath+"combinedField.vtk", diffeoDirPath, useNearestNeighborInterpolation)
+    imgCheckerBoard(diffeoDirPath+inImgFileName, origDirPath+refImgFileName, diffeoDirPath+"checkerboard.img")
+
+    # Apply displacemet field to input 
+    fieldPath = outDirPath+"field.vtk"
+    shutil.copyfile(diffeoDirPath+"combinedField.vtk", fieldPath)
+    imgApplyField(origDirPath+inImgFileName, fieldPath, outPath, useNearestNeighborInterpolation)
     
-    ###imgCopy(affineDirPath+inImgFileName, outDirPath)
-    ###shutil.copy(mapPath, outDirPath)
-    ###shutil.copy(invMapPath, outDirPath)
-
-    # TODO: Do diffeomorphic registration
-
-    return (fieldPath, invFieldPath)
+    return ###(fieldPath, invFieldPath)
