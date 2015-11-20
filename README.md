@@ -5,12 +5,12 @@ Submit bug reports [here](https://github.com/openconnectome/ndreg/issues/new).
 
 
 ## Installation Requirements
-CAJAL (https://github.com/openconnectome/CAJAL.git)
-ndio (https://github.com/openconnectome/ndio.git)
-ITK 4.0
-SimpleITK 
-numpy 
-FFTW (recomended)
+- CAJAL (https://github.com/openconnectome/CAJAL.git)
+- ndio (https://github.com/openconnectome/ndio.git)
+- ITK 4.0
+- SimpleITK
+- numpy 
+- FFTW (recomended)
 
 ## Installation of requirements (On Ubuntu)
 ```bash
