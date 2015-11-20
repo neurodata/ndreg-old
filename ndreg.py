@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # TODO
-# Add diffeomorphic registration code
-# Add code to automatically generate brain masks
 # Use ndio to fetch images from OCP insted of using ANALYZE files.
 
 from __future__ import print_function
 import SimpleITK as sitk
 import sys, os, math, glob, subprocess, shutil, landmarks
 from numpy import mat, array, dot
+from time import time
 
 scriptDirPath = os.path.dirname(os.path.realpath(__file__))+"/"
 
@@ -162,6 +161,41 @@ def imgThreshold(inPath, outPath, threshold=0):
 
     return outPath
 
+def imgGenerateMask(inPath, outPath, threshold=None):
+    forgroundValue = 1
+    inImg = imgRead(inPath)
+    spacing = min(list(inImg.GetSpacing()))
+    openingRadiusMM = 0.05 # In mm
+    closingRadiusMM = 0.125 # In mm
+    openingRadius = max(1, int(round(openingRadiusMM / spacing))) # In voxels
+    closingRadius = max(1, int(round(closingRadiusMM / spacing))) # In voxels
+    
+    if threshold is None:
+        inMask = sitk.BinaryThreshold(inImg, 0, 0, 0, forgroundValue) # Mask of non-zero voxels
+        otsuThresholder = sitk.OtsuThresholdImageFilter()
+        otsuThresholder.SetInsideValue(0)
+        otsuThresholder.SetOutsideValue(forgroundValue)
+        otsuThresholder.SetMaskValue(forgroundValue)
+        tmpMask = otsuThresholder.Execute(inImg, inMask)
+    else:
+        tmpMask = sitk.BinaryThreshold(inImg, 0, threshold, 0, forgroundValue)
+
+    # Morphological open temporary mask remove small objects in background
+    opener = sitk.GrayscaleMorphologicalOpeningImageFilter()
+    opener.SetKernelType(sitk.sitkBall)
+    opener.SetKernelRadius(openingRadius)
+    tmpMask = opener.Execute(tmpMask)
+
+    closer = sitk.GrayscaleMorphologicalClosingImageFilter()
+    closer.SetKernelType(sitk.sitkBall)
+    closer.SetKernelRadius(closingRadius)
+    outMask = closer.Execute(tmpMask)
+
+    (outPath, outDirPath) = getOutPaths(inPath, outPath)
+    imgWrite(outMask, outPath)    
+
+    return outPath
+
 def imgCheckerBoard(inPath, refPath, outPath, useHistogramMatching=True):
     inImg = imgRead(inPath)
     refImg = imgRead(refPath)
@@ -278,11 +312,7 @@ def fieldApplyField(inPath, fieldPath, outPath):
     outTransform.AddTransform(inTransform)
 
     # Get output displacement field
-    outField = sitk.TransformToDisplacementFieldFilter().Execute(outTransform, vectorType, size, zeroOrigin, spacing, identityDirection)    
-    #outFieldGenerator = sitk.TransformToDisplacementFieldFilter()
-    #outFieldGenerator.SetSize(size)
-    #outField = outFieldGenerator.Execute(outTransform)
-    
+    outField = sitk.TransformToDisplacementFieldFilter().Execute(outTransform, vectorType, size, zeroOrigin, spacing, identityDirection)        
 
     # Write output field
     (outPath, outDirPath) = getOutPaths(inPath, outPath)    
@@ -495,8 +525,8 @@ def imgMetamorphosis(inPath, refPath, outPath, alpha=0.01, beta=0.05, useNearest
     return fieldPath
 
 
-def imgRegistration(inImgPath, refImgPath, outDirPath, useNearestNeighborInterpolation=False):
-    (outPath, outDirPath) = getOutPaths(inImgPath, outDirPath)
+def imgRegistration(inImgPath, refImgPath, outPath, useNearestNeighborInterpolation=False):
+    (outPath, outDirPath) = getOutPaths(inImgPath, outPath)
 
     inImgFileName = os.path.basename(inImgPath)
     refImgFileName = os.path.basename(refImgPath)
