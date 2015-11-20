@@ -1,12 +1,12 @@
 # ndreg metamorphosis
 Executable for doing simultaneous diffeomorphic registration (LDDMM) and intensity correction.
-itkCommandLineArgumentParser.h* come from https://github.com/midas-journal/midas-journal-793
+itkCommandLineArgumentParser.h* come from https://github.com/midas-journal/midas-journal-793.
 Submit bug reports [here](https://github.com/openconnectome/ndreg/issues/new).
 
 ## Build Requirements
-ITK 4.0
-CMake 2.6 
-FFTW (recomended)
+- ITK 4.0
+- CMake 2.6 
+- FFTW (recomended)
 
 ## Building (On Ubuntu)
 ```bash
