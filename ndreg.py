@@ -6,9 +6,10 @@
 from __future__ import print_function
 import SimpleITK as sitk
 import sys, os, math, glob, subprocess, shutil, landmarks
+import numpy as np
 from numpy import mat, array, dot
 from time import time
-
+from itertools import product
 scriptDirPath = os.path.dirname(os.path.realpath(__file__))+"/"
 
 dimension = 3
@@ -17,6 +18,7 @@ vectorType = sitk.sitkVectorFloat32
 identityAffine = [1,0,0,0,1,0,0,0,1,0,0,0]
 identityDirection = [1,0,0,0,1,0,0,0,1]
 zeroOrigin = [0]*dimension
+zeroIndex = [0]*dimension
 
 def run(command, checkReturnValue=True, quiet=True):
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
@@ -161,16 +163,16 @@ def imgThreshold(inPath, outPath, threshold=0):
 
     return outPath
 
-def imgGenerateMask(inPath, outPath, threshold=None):
-    forgroundValue = 1
+def imgGenerateMask(inPath, outPath, threshold=None, forgroundValue=1):
+    """
+    Generates morphologically smooth mask with given forground value from input image.
+    If the threshold is given, the binary mask is initialzed using the given threshold...
+    ...Otherwise it is initialized using Otsu's Method.
+    """
     inImg = imgRead(inPath)
-    spacing = min(list(inImg.GetSpacing()))
-    openingRadiusMM = 0.05 # In mm
-    closingRadiusMM = 0.125 # In mm
-    openingRadius = max(1, int(round(openingRadiusMM / spacing))) # In voxels
-    closingRadius = max(1, int(round(closingRadiusMM / spacing))) # In voxels
     
     if threshold is None:
+        # Initialize binary mask using otsu threshold
         inMask = sitk.BinaryThreshold(inImg, 0, 0, 0, forgroundValue) # Mask of non-zero voxels
         otsuThresholder = sitk.OtsuThresholdImageFilter()
         otsuThresholder.SetInsideValue(0)
@@ -178,27 +180,51 @@ def imgGenerateMask(inPath, outPath, threshold=None):
         otsuThresholder.SetMaskValue(forgroundValue)
         tmpMask = otsuThresholder.Execute(inImg, inMask)
     else:
+        # initialzie binary mask using given threshold
         tmpMask = sitk.BinaryThreshold(inImg, 0, threshold, 0, forgroundValue)
 
-    # Morphological open temporary mask remove small objects in background
+    # Assuming input image is has isotropic resolution...
+    # ... compute size of morphological kernels in voxels.
+    spacing = min(list(inImg.GetSpacing()))
+    openingRadiusMM = 0.05 # In mm
+    closingRadiusMM = 0.125 # In mm
+    openingRadius = max(1, int(round(openingRadiusMM / spacing))) # In voxels
+    closingRadius = max(1, int(round(closingRadiusMM / spacing))) # In voxels
+
+    # Morphological open mask remove small background objects
     opener = sitk.GrayscaleMorphologicalOpeningImageFilter()
     opener.SetKernelType(sitk.sitkBall)
     opener.SetKernelRadius(openingRadius)
     tmpMask = opener.Execute(tmpMask)
 
+    # Morphologically close mask to fill in any holes
     closer = sitk.GrayscaleMorphologicalClosingImageFilter()
     closer.SetKernelType(sitk.sitkBall)
     closer.SetKernelRadius(closingRadius)
     outMask = closer.Execute(tmpMask)
 
+    # Write output mask
     (outPath, outDirPath) = getOutPaths(inPath, outPath)
-    imgWrite(outMask, outPath)    
+    imgWrite(outMask, outPath)
 
     return outPath
 
 def imgCheckerBoard(inPath, refPath, outPath, useHistogramMatching=True):
+    """
+    Checkerboards input image with reference image
+    """
+    # Read input and reference images
     inImg = imgRead(inPath)
     refImg = imgRead(refPath)
+    
+    inSize = list(inImg.GetSize())
+    refSize = list(refImg.GetSize())
+    
+    if(inSize != refSize):
+        sourceSize = np.array([inSize, refSize]).min(0)
+        tmpImg = sitk.Image(refSize,refImg.GetPixelID()) # Empty image with same size as reference image
+        tmpImg.CopyInformation(refImg)
+        inImg = sitk.PasteImageFilter().Execute(tmpImg, inImg, sourceSize, zeroIndex, zeroIndex)
 
     if useHistogramMatching:
         numBins = 64
@@ -253,22 +279,22 @@ def imgResample(inPath, outPath, spacing, size=[], useNearestNeighborInterpolati
     
     return outPath
 
+def sizeOut(inImg, transform, outSpacing):
+    outCornerPointList = []
+    inSize = inImg.GetSize()
+    for corner in product((0,1), repeat=dimension):
+        inCornerIndex = array(corner)*array(inSize)
+        inCornerPoint = inImg.TransformIndexToPhysicalPoint(inCornerIndex)
+        outCornerPoint = transform.GetInverse().TransformPoint(inCornerPoint)
+        outCornerPointList += [list(outCornerPoint)]
+
+    size = np.ceil(array(outCornerPointList).max(0) / outSpacing).astype(int)
+    return size
+    
 
 def imgApplyAffine(inPath, outPath, affine, useNearestNeighborInterpolation=False, size=[], spacing=[]):
     # Read input image
     inImg = sitk.ReadImage(inPath)
-
-    # Set size
-    if size == []:
-        size = inImg.GetSize()
-    else:
-       if len(size) != dimension: raise Exception("size must have length {0}.".format(dimension))
-
-    # Set Spacing
-    if spacing == []:
-        spacing = inImg.GetSpacing()
-    else:
-        if len(spacing) != dimension: raise Exception("spacing must have length {0}.".format(dimension))
 
     # Set interpolator
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearestNeighborInterpolation]
@@ -279,6 +305,30 @@ def imgApplyAffine(inPath, outPath, affine, useNearestNeighborInterpolation=Fals
     if (len(affine) != numParameters): raise Exception("affine must have length {0}.".format(numParameters))
     affineTransform = sitk.AffineTransform(dimension)
     affineTransform.SetParameters(affine)
+
+    # Set Spacing
+    if spacing == []:
+        spacing = inImg.GetSpacing()
+    else:
+        if len(spacing) != dimension: raise Exception("spacing must have length {0}.".format(dimension))
+
+    # Set size
+    if size == []:
+        # Compute size to contain entire output image
+        """
+        outCornerPointList = []
+        inSize = inImg.GetSize()
+        for corner in product((0,1), repeat=dimension):
+            inCornerIndex = array(corner)*array(inSize)
+            inCornerPoint = inImg.TransformIndexToPhysicalPoint(inCornerIndex)
+            outCornerPoint = affineTransform.GetInverse().TransformPoint(inCornerPoint)
+            outCornerPointList += [list(outCornerPoint)]
+
+        size = np.ceil(array(outCornerPointList).max(0) / spacing).astype(int)
+        """
+        size = sizeOut(inImg, affineTransform, spacing)
+    else:
+       if len(size) != dimension: raise Exception("size must have length {0}.".format(dimension))
     
     # Apply affine transform
     outImg = sitk.Resample(inImg, size, affineTransform, interpolator, zeroOrigin, spacing)
@@ -320,29 +370,37 @@ def fieldApplyField(inPath, fieldPath, outPath):
 
     return outPath
 
-def imgApplyField(inPath, fieldPath, outPath, useNearestNeighborInterpolation=False, size=[]):
+def imgApplyField(inPath, fieldPath, outPath, useNearestNeighborInterpolation=False, size=[], spacing=[]):
     """
     img \circ field
     """
     inImg = imgRead(inPath)
+    inImg.SetDirection(identityDirection)
     field = sitk.Cast(imgRead(fieldPath), sitk.sitkVectorFloat64)
-
-    # Set size
-    if size == []:
-        size = inImg.GetSize()
-    else:
-       if len(size) != dimension: raise Exception("size must have length {0}.".format(dimension))
+    field.SetDirection(identityDirection)
 
     # Set interpolator
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearestNeighborInterpolation]
 
     # Set transform field
     transform = sitk.DisplacementFieldTransform(dimension)
-    transform.SetInterpolator(interpolator)
+    transform.SetInterpolator(sitk.sitkLinear)
     transform.SetDisplacementField(field)
+
+
+    # Set size
+    if size == []:
+        size = inImg.GetSize()
+    else:
+        if len(size) != dimension: raise Exception("size must have length {0}.".format(dimension))
+
+    # Set Spacing
+    if spacing == []:
+        spacing = inImg.GetSpacing()
+    else:
+        if len(spacing) != dimension: raise Exception("spacing must have length {0}.".format(dimension))
     
-    # Apply affine transform
-    spacing = inImg.GetSpacing()
+    # Apply displacement transform
     outImg = sitk.Resample(inImg, size, transform, interpolator, zeroOrigin, spacing)
 
     # Write output image
@@ -476,13 +534,14 @@ def affineToMap(affine, size, outPath, spacing=[1,1,1]):
     imgWrite(outMap, outPath)
     return outPath
 
-def imgAffine(inPath, refPath, outPath, useNearestNeighborInterpolation=False, useRigid=False):
+def imgAffine(inPath, refPath, outPath, useNearestNeighborInterpolation=False, useRigid=False, verbose=False):
     """
     Perform Affine Registration between input image and reference image
     """
     # Read input and reference images
     inImg = imgRead(inPath)
     refImg = imgRead(refPath)
+    (outPath, outDirPath) = getOutPaths(inPath, outPath)
 
     # Set interpolator
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearestNeighborInterpolation]
@@ -495,10 +554,15 @@ def imgAffine(inPath, refPath, outPath, useNearestNeighborInterpolation=False, u
     registration.SetMetricAsMeanSquares()
     registration.SetInterpolator(interpolator)
     registration.SetInitialTransform(transform)
-    registration.SetOptimizerAsGradientDescent(learningRate=0.00001, numberOfIterations=100)
-    #registration_method.SetOptimizerScalesFromPhysicalShift() 
-    registration.Execute(sitk.Cast(refImg,sitk.sitkFloat32),
-                         sitk.Cast(inImg,sitk.sitkFloat32) )
+    registration.SetOptimizerAsGradientDescent(learningRate=0.000001, numberOfIterations=1000)
+    #registration_method.SetOptimizerScalesFromPhysicalShift()
+    if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("Iteration = {0}, Value = {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
+    #imgWrite(sitk.SmoothingRecursiveGaussian(inImg,0.25),outDirPath+"in.img")
+    #imgWrite(sitk.SmoothingRecursiveGaussian(refImg,0.25),outDirPath+"ref.img")
+
+    registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,0.25),
+                         sitk.SmoothingRecursiveGaussian(inImg,0.25) )
+
 
     # Write final transform parameters to text file
     affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
@@ -511,7 +575,7 @@ def imgAffine(inPath, refPath, outPath, useNearestNeighborInterpolation=False, u
     return affine
 
 
-def imgMetamorphosis(inPath, refPath, outPath, alpha=0.01, beta=0.05, useNearestNeighborInterpolation=False, useBiasCorrection=False):
+def imgMetamorphosis(inPath, refPath, outPath, alpha=0.01, beta=0.05, useNearestNeighborInterpolation=False, useBiasCorrection=False, verbose=True):
     """
     Performs Metamorphic LDDMM between input and refereence images
     """
@@ -519,71 +583,81 @@ def imgMetamorphosis(inPath, refPath, outPath, alpha=0.01, beta=0.05, useNearest
 
     (outPath, outDirPath) = getOutPaths(inPath, outPath)    
     fieldPath = outDirPath+"field.vtk"
-    command = scriptDirPath+"metamorphosis/bin/metamorphosis --input {0} --reference {1} --output {2} --alpha {3} --beta {4} --displacement {5} --steps 2 --verbose".format(inPath, refPath, outPath, alpha, beta, fieldPath)
+    command = scriptDirPath+"metamorphosis/bin/metamorphosis --input {0} --reference {1} --output {2} --alpha {3} --beta {4} --displacement {5} --sigma 1 --steps 2".format(inPath, refPath, outPath, alpha, beta, fieldPath)
+    if(verbose): command += " --verbose"
     os.system(command)
 
     return fieldPath
 
 
-def imgRegistration(inImgPath, refImgPath, outPath, useNearestNeighborInterpolation=False):
+def imgRegistration(inImgPath, refImgPath, outPath, useNearestNeighborInterpolation=False, initialAffine=identityAffine):
     (outPath, outDirPath) = getOutPaths(inImgPath, outPath)
 
     inImgFileName = os.path.basename(inImgPath)
     refImgFileName = os.path.basename(refImgPath)
 
-    print("...Getting Original Data")
+    # Get original data
+    print("--- Getting Original Data")
     origDirPath = outDirPath + "0_orig/"
 
-    # Get original data
-    imgCopy(inImgPath, origDirPath)
-    imgCopy(refImgPath, origDirPath)
-
-    # Get size and spacing of images
-    refImg = imgRead(origDirPath+refImgFileName)
+    refImg = imgRead(refImgPath)
     refSize = refImg.GetSize()
     refSpacing = refImg.GetSpacing()
+    refImg.SetDirection(identityDirection)
+    imgWrite(refImg,origDirPath+refImgFileName)
 
-    inImg = imgRead(origDirPath+refImgFileName)
+    inImg = imgRead(inImgPath)
     inSize = inImg.GetSize()
     inSpacing = inImg.GetSpacing()
+    inImg.SetDirection(identityDirection)
+    imgWrite(inImg,origDirPath+inImgFileName)
 
-    # Do rigid registration
-    print("...Rigid Registration")
-    rigidDirPath = outDirPath + "1_rigid/"
-    rigid = imgAffine(origDirPath+inImgFileName, origDirPath+refImgFileName, rigidDirPath, useNearestNeighborInterpolation, True)
-    imgCheckerBoard(rigidDirPath+inImgFileName, origDirPath+refImgFileName, rigidDirPath+"checkerboard.img")
+    # Apply initial affine
+    print("--- Applying initial affine")
+    initialDirPath = outDirPath + "1_initial/"
+    imgApplyAffine(origDirPath+inImgFileName, initialDirPath, initialAffine, useNearestNeighborInterpolation)
+    imgCheckerBoard(initialDirPath+inImgFileName, origDirPath+refImgFileName, initialDirPath+"checkerboard.img")
     
+    # Do rigid registration
+    print("--- Rigid Registration")
+    rigidDirPath = outDirPath + "2_rigid/"
+    rigid = imgAffine(initialDirPath+inImgFileName, origDirPath+refImgFileName, rigidDirPath, useNearestNeighborInterpolation, True, True)
+    imgCheckerBoard(rigidDirPath+inImgFileName, origDirPath+refImgFileName, rigidDirPath+"checkerboard.img")
+
+    # Combine initial and rigid transforms and write result to file
+    combinedAffine = affineApplyAffine(rigid, initialAffine)
+    txtWriteParameterList(combinedAffine, rigidDirPath+"combinedAffine.txt") # Write combined transform to file
+
     # Do affine registration
-    print("...Affine Registration")
-    affineDirPath = outDirPath + "2_affine/"
+    print("--- Affine Registration")
+    affineDirPath = outDirPath + "3_affine/"
+    affine = imgAffine(rigidDirPath+inImgFileName, origDirPath+refImgFileName, affineDirPath, useNearestNeighborInterpolation, False, True) # Do affine registration
+    #imgCheckerBoard(affineDirPath+inImgFileName, origDirPath+refImgFileName, affineDirPath+"checkerboard.img") ###
 
-    affine = imgAffine(rigidDirPath+inImgFileName, origDirPath+refImgFileName, affineDirPath, useNearestNeighborInterpolation, False) # Do affine registration
-
-    # Combine rigid and affine transforms and write result to file
-    combinedAffine = affineApplyAffine(affine, rigid)                         # Conbine rigid and affine transforms
+    # Combine initial and rigid transforms and write result to file
+    combinedAffine = affineApplyAffine(affine, combinedAffine)                         # Conbine rigid and affine transforms
     txtWriteParameterList(combinedAffine, affineDirPath+"combinedAffine.txt") # Write combined transform to file
-    #imgApplyAffine(origDirPath+inImgFileName, affineDirPath+, combinedAffine, useNearestNeighborInterpolation, refSize) # Apply combined transform to orignal input image
 
     # Convert combined affine to displacement field
     fieldPath = affineDirPath+"field.vtk"
-    affineToField(combinedAffine, inSize, inSpacing, fieldPath)
+    affineToField(combinedAffine, refSize, inSpacing, fieldPath)
 
     # Convert inverse combined affine to displacement field
     invFieldPath = affineDirPath+"fieldInv.vtk"
-    affineToField(affineInverse(combinedAffine), refSize, refSpacing, invFieldPath)
+    affineToField(affineInverse(combinedAffine), inSize, refSpacing, invFieldPath)
 
     # Apply combined transform to original input image and generate checkerboard image between original input image and reference image
-    imgApplyField(origDirPath+inImgFileName, fieldPath, affineDirPath, useNearestNeighborInterpolation)
+    imgApplyField(origDirPath+inImgFileName, fieldPath, affineDirPath, useNearestNeighborInterpolation, refSize)
     imgCheckerBoard(affineDirPath+inImgFileName, origDirPath+refImgFileName, affineDirPath+"checkerboard.img")
 
     # Do diffeomorphic registration
     print("...Diffeomorphic Registrration")
     diffeoDirPath = outDirPath + "3_diffeo/"
-    alpha = 0.01
+    alpha = 0.05
     beta  = 0.05
-    #imgMetamorphosis(affineDirPath+inImgFileName, origDirPath+refImgFileName, diffeoDirPath, alpha, beta, useNearestNeighborInterpolation, False)
+    imgMetamorphosis(affineDirPath+inImgFileName, origDirPath+refImgFileName, diffeoDirPath, alpha, beta, useNearestNeighborInterpolation, False)
     fieldApplyField(diffeoDirPath+"field.vtk", affineDirPath+"field.vtk", diffeoDirPath+"combinedField.vtk")
-    imgApplyField(origDirPath+inImgFileName, diffeoDirPath+"combinedField.vtk", diffeoDirPath, useNearestNeighborInterpolation)
+    imgApplyField(origDirPath+inImgFileName, diffeoDirPath+"combinedField.vtk", diffeoDirPath, useNearestNeighborInterpolation, refSize)
     imgCheckerBoard(diffeoDirPath+inImgFileName, origDirPath+refImgFileName, diffeoDirPath+"checkerboard.img")
 
     # Apply displacemet field to input 
@@ -591,4 +665,47 @@ def imgRegistration(inImgPath, refImgPath, outPath, useNearestNeighborInterpolat
     shutil.copyfile(diffeoDirPath+"combinedField.vtk", fieldPath)
     imgApplyField(origDirPath+inImgFileName, fieldPath, outPath, useNearestNeighborInterpolation)
     
-    return ###(fieldPath, invFieldPath)
+    return (fieldPath, None)
+
+def maskPipeline(inPath, atlasPath, atlasLabelPath, outPath, spacing=[0.1,0.1,0.1], initialAffine=identityAffine, inThreshold=None, atlasThreshold=None):
+    (outPath, outDirPath) = getOutPaths(inPath, outPath)
+    """
+    Mask Pipeline aligns atlas to input image using their masks
+    If available an initial affine transform can be provided to aid in the alignment.
+    """
+    if len(spacing) != dimension: raise Exception("spacing must have length {0}.".format(dimension))
+    if len(initialAffine) != len(identityAffine): raise Exception("affine must have length {0}.".format(numParameters))
+    inImg=imgRead(inPath)
+    inSize=inImg.GetSize()
+    inSpacing=inImg.GetSpacing()
+    inFileName = os.path.basename(inPath)
+    atlasFileName = os.path.basename(atlasPath)
+    atlasLabelFileName = os.path.basename(atlasLabelPath)
+
+    # Downsample input and atlas images to given spacing
+    print("Downsampling")
+    dsDirPath = outDirPath + "1_ds/"
+    imgResample(inPath, dsDirPath, spacing)
+    imgResample(atlasPath, dsDirPath, spacing)
+
+    # Generate masks of input and atlas images
+    print("Generating Masks")
+    maskDirPath = outDirPath + "2_mask/"
+
+    foregroundValue = 255
+    imgGenerateMask(dsDirPath+inFileName, maskDirPath, inThreshold, foregroundValue)
+    imgGenerateMask(dsDirPath+atlasFileName, maskDirPath, atlasThreshold, foregroundValue)
+
+    print("Registering Masks")
+    # Run mask registration
+    regDirPath = outDirPath + "3_reg/"
+    imgRegistration(maskDirPath+atlasFileName, maskDirPath+inFileName, regDirPath, True, initialAffine)
+    
+    print("Applying Deformation Field")
+    atlasLabelImg = imgRead(atlasLabelPath)
+    imgWrite(sitk.Cast(atlasLabelImg, sitk.sitkInt16), outDirPath+atlasLabelFileName)
+    imgApplyField(atlasPath, regDirPath+"field.vtk", outDirPath, False, inSize, inSpacing)
+    imgApplyField(outDirPath+atlasLabelFileName, regDirPath+"field.vtk", outDirPath, True, inSize, inSpacing)
+
+    return outPath
+

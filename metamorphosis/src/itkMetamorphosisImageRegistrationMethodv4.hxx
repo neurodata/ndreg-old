@@ -704,9 +704,7 @@ void
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage, TWeightImage>::
 GenerateData()
 {
-  print("Initialize");////
   Initialize();
-  print("Start Optimization"); ////
   StartOptimization();
 
   // Integrate velocity to get final displacement, \phi_10
