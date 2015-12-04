@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# TODO
-# Use ndio to fetch images from OCP insted of using ANALYZE files.
 
 from __future__ import print_function
 import SimpleITK as sitk
+import ndio.remote.OCP as ocp
 import sys, os, math, glob, subprocess, shutil, landmarks
 import numpy as np
 from numpy import mat, array, dot
@@ -83,6 +82,58 @@ def imgCopy(inPath, outPath):
     for ext in [".img",".hdr"]: shutil.copy(os.path.splitext(inPath)[0]+ext, os.path.splitext(outPath)[0]+ext)
     return outPath
 
+def imgUpload(path, token, channel="", resolution=0, server="openconnecto.me"):
+    """
+    Upload image with given token from given server at given resolution.
+    If channel isn't specified image is uploaded to default channel
+    
+    TODO: Check bounds
+    """
+    # Read image
+    img = imgRead(path)
+    array = sitk.GetArrayFromImage(img).transpose([1,2,0])
+
+    # Create OCP instance
+    oo = ocp()
+    oo.hostname = server
+
+    # Get size and spacing of image data
+    metadata = oo.get_proj_info(token)
+    #size = metadata[u'dataset'][u'imagesize'][unicode(str(resolution))]
+    size = array.shape
+    
+    # Download all image data from specified channel
+    if(channel == ""): channel = metadata[u'channels'].keys()[0] # If channel isn't specified use first one.
+    oo.post_cutout(token, channel, 0, size[0], 0, size[1], 0, size[2], data=array, resolution=resolution)
+
+def imgDownload(token, path, channel="", resolution=0, server="openconnecto.me"):
+    """
+    Download image with given token from given server at given resolution.
+    If channel isn't specified the default channel is downloaded.
+    """
+    
+    # Create OCP instance
+    oo = ocp()
+    oo.hostname = server
+
+    # Get size and spacing of image data
+    metadata = oo.get_proj_info(token)
+    size = metadata[u'dataset'][u'imagesize'][unicode(str(resolution))]
+    spacingNm = metadata[u'dataset'][u'voxelres'][unicode(str(resolution))] # Returns spacing in nanometers
+    spacing = [x * 1e-6 for x in spacingNm] # Convert spacing to mm
+
+    # Download all image data from specified channel
+    if(channel == ""): channel = metadata[u'channels'].keys()[0] # If channel isn't specified use first one.
+    array = oo.get_cutout(token, channel,0,size[0],0,size[1],0,size[2],resolution)
+    img = sitk.GetImageFromArray(array) # convert numpy array to sitk image
+    img.SetSpacing(spacing)
+
+    # Write image to file
+    path = getOutPaths("",path)[0]
+    imgWrite(img, path)
+
+    return path
+
 def imgRead(path):
     """
     Alias for sitk.ReadImage
@@ -94,7 +145,7 @@ def imgWrite(img, path):
     """
     Write sitk image to path.
     """
-
+    path = getOutPaths("",path)[0]
     sitk.WriteImage(img, path)
     #sitk.ImageFileWriter().Execute(img, path, False)
 
@@ -621,7 +672,7 @@ def imgRegistration(inImgPath, refImgPath, outPath, useNearestNeighborInterpolat
     # Do rigid registration
     print("--- Rigid Registration")
     rigidDirPath = outDirPath + "2_rigid/"
-    rigid = imgAffine(initialDirPath+inImgFileName, origDirPath+refImgFileName, rigidDirPath, useNearestNeighborInterpolation, True, True)
+    rigid = imgAffine(initialDirPath+inImgFileName, origDirPath+refImgFileName, rigidDirPath, useNearestNeighborInterpolation, useRigid=True, verbose=False)
     imgCheckerBoard(rigidDirPath+inImgFileName, origDirPath+refImgFileName, rigidDirPath+"checkerboard.img")
 
     # Combine initial and rigid transforms and write result to file
@@ -631,7 +682,7 @@ def imgRegistration(inImgPath, refImgPath, outPath, useNearestNeighborInterpolat
     # Do affine registration
     print("--- Affine Registration")
     affineDirPath = outDirPath + "3_affine/"
-    affine = imgAffine(rigidDirPath+inImgFileName, origDirPath+refImgFileName, affineDirPath, useNearestNeighborInterpolation, False, True) # Do affine registration
+    affine = imgAffine(rigidDirPath+inImgFileName, origDirPath+refImgFileName, affineDirPath, useNearestNeighborInterpolation, useRigid=False, verbose=False) # Do affine registration
     #imgCheckerBoard(affineDirPath+inImgFileName, origDirPath+refImgFileName, affineDirPath+"checkerboard.img") ###
 
     # Combine initial and rigid transforms and write result to file
