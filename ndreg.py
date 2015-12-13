@@ -123,7 +123,15 @@ def imgDownload(token, path, channel="", resolution=0, server="openconnecto.me")
     spacing = [x * 1e-6 for x in spacingNm] # Convert spacing to mm
 
     # Download all image data from specified channel
-    if(channel == ""): channel = metadata[u'channels'].keys()[0] # If channel isn't specified use first one.
+    channelList = metadata[u'channels'].keys()
+    
+    if len(channelList) == 0:
+        raise Exception("No channels defined for given token.")
+    elif channel == "": 
+        channel = channelList[0] # If channel isn't specified use first one.
+    elif not(channel in channelList):
+        raise Exception("Channel '{0}' does not exist for given token.".format(channel))
+
     array = oo.get_cutout(token, channel,0,size[0],0,size[1],0,size[2],resolution)
     img = sitk.GetImageFromArray(array) # convert numpy array to sitk image
     img.SetSpacing(spacing)

@@ -3,17 +3,18 @@ Executable for doing simultaneous diffeomorphic registration (LDDMM) and intensi
 itkCommandLineArgumentParser.h* come from https://github.com/midas-journal/midas-journal-793.
 Submit bug reports [here](https://github.com/openconnectome/ndreg/issues/new).
 
-## Build Requirements
+## Requirements
 - ITK 4.0
 - CMake 2.6 
-- FFTW (recomended)
+- FFTW
 
-## Building (On Ubuntu)
+## Building (On Ubuntu 14.04)
 ```bash
-sudo apt-get install libinsighttoolkit4-dev fftw3 cmake-curses-gui # Install required packages
+sudo apt-get install libinsighttoolkit4-dev libfftw3-dev libtiff5-dev # Install required packages
+sudo apt-get install cmake-curses-gui # Install recomended packages
 mkdir ../bin
 cd ../bin
-ccmake -G "Unix Makefiles" ../src/ # Configure and generate build using console
+cmake -G "Unix Makefiles" ../src/ # Configure and generate build using console
 make
 ```
 
