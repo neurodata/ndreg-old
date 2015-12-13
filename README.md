@@ -18,7 +18,7 @@ Submit bug reports [here](https://github.com/openconnectome/ndreg/issues/new).
 sudo apt-get install python-numpy
 easy_install --user SimpleITK
 ```
-1. Build metamorphosis binary for diffeomorphic registration using instructions in ./metamorphosis/src/README.md
+2. Build metamorphosis binary for diffeomorphic registration using instructions in ./metamorphosis/src/README.md
 
 ## Changelog
 - **0.3** (December 4, 2015)
