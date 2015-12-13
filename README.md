@@ -32,5 +32,3 @@ easy_install --user SimpleITK
 - **0.1** (November 11, 2015)
     - Initial commit for Rigid/Affine registration
 
-## Under Development
-- [ ] Add support for ndio
