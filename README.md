@@ -13,12 +13,12 @@ Submit bug reports [here](https://github.com/openconnectome/ndreg/issues/new).
 
 ## Installation (On Ubuntu 14.04)
 
-1. Install numpy and SimpleITK
+-  Install numpy and SimpleITK
 ```bash
 sudo apt-get install python-numpy
 easy_install --user SimpleITK
 ```
-2. Build metamorphosis binary for diffeomorphic registration using instructions in ./metamorphosis/src/README.md
+- Build metamorphosis binary for diffeomorphic registration using instructions in ./metamorphosis/src/README.md
 
 ## Changelog
 - **0.3** (December 4, 2015)
