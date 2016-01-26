@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 from __future__ import print_function
-import math, copy, csv
+import math, copy, csv, sys
 from numpy import mat, multiply
 
 class landmarks:
@@ -16,9 +16,10 @@ class landmarks:
         lmk.Write(path)           # Write landmarks to given path
     """
 
-    def __init__(self, inputLandmarks=[['0',0]]):
+    def __init__(self, inputLandmarks=[['0',0,0,0]], spacing=[1.0,1.0,1.0]):
+        self.spacing = spacing
         if type(inputLandmarks) is str:
-            self.Read(inputLandmarks)
+            self.Read(inputLandmarks, spacing)
         elif type(inputLandmarks) is list:
             self.SetLandmarks(inputLandmarks)
         else:
@@ -137,7 +138,7 @@ class landmarks:
         return maxValue
 
 
-    def Read(self,path):
+    def Read(self,path,spacing=[1.0,1.0,1.0]):
         """
         Reads landmarks from given path.
         It accepts landmarks files in the following formats
@@ -156,6 +157,8 @@ class landmarks:
             ...
             labelN xN yN zN ...
         """
+        self.spacing = spacing
+
         # Read lines from landmark file into list while triming whitespace and skiping blank line
         landmarkFile = open(path,"r")
         lineList = []
@@ -180,14 +183,15 @@ class landmarks:
         while i < len(lineList):
             if len(lineList[i]) == 1: # For CIS format landmarks
                 label = lineList[i][0]
-                x,y,z = map(float,lineList[i+1][0:3])
+                index = map(float,lineList[i+1][0:3])
                 i += 2
             else:                     # For DiffeoMap format landmarks
                 label = lineList[i][0]
-                x,y,z = map(float,lineList[i][1:4])
+                index = map(float,lineList[i][1:4])
                 i += 1
 
-            landmark = [label,x,y,z]
+            point = [a*b for (a,b) in zip(index, spacing)]
+            landmark = [label] + point
             landmarkList.append(landmark)
             if len(landmarkList) >= numberOfLandmarks: break
 
@@ -204,10 +208,15 @@ class landmarks:
 
         # Write landmarks
         for landmark in self.landmarkList:
-            [label,x,y,z] = map(str,landmark)
+            label = landmark[0]
+            point = landmark[1:]
+            index = [str(a/b) for (a,b) in zip(point, self.spacing)]
             print(label,file=landmarkFile)
-            print(" ".join([x,y,z,"1","1"]), file=landmarkFile)
+            print(" ".join(index + ["1","1"]), file=landmarkFile)
 
+        # Write tail
+        # tail = '0\n0\n0\n0,1,0\n0\n"NeuroData"\n0.1,0.9\n"Voxel"\n0,0,0\n' + ",".join(map(str,self.spacing))
+        # print(tail, file=landmarkFile)
         landmarkFile.close()
 
     def WriteCsv(self, path):
@@ -245,7 +254,7 @@ class landmarks:
             x1 = A.I*(x0 - b)
             lmk = [labelList[i]] +  x1.flatten().tolist()[0]
             lmkList.append(lmk)
-        return landmarks(lmkList)
+        return landmarks(lmkList, self.spacing)
 
     def Flip(self, size):
         """
@@ -261,7 +270,7 @@ class landmarks:
             x1 = s - 1 - x0
             lmk  = [labelList[i]] + x1.tolist()[0]
             lmkList.append(lmk)
-        return landmarks(lmkList)
+        return landmarks(lmkList, self.spacing)
 
     def Resample(self, inSpacing, outSpacing):
         outLandmarkList = []
@@ -285,5 +294,5 @@ class landmarks:
             outLandmark = [inLabel] + outCoordinate.tolist()[0]
             outLandmarkList.append(outLandmark)
 
-        return landmarks(outLandmarkList)
+        return landmarks(outLandmarkList, self.spacing)
 

@@ -4,11 +4,12 @@
 from __future__ import print_function
 import SimpleITK as sitk
 import ndio.remote.OCP as ocp
-import sys, os, math, glob, subprocess, shutil, landmarks
+import sys, os, math, glob, subprocess, shutil
 import numpy as np
 from numpy import mat, array, dot
 from time import time
 from itertools import product
+from landmarks import *
 scriptDirPath = os.path.dirname(os.path.realpath(__file__))+"/"
 
 dimension = 3
@@ -18,7 +19,7 @@ identityAffine = [1,0,0,0,1,0,0,0,1,0,0,0]
 identityDirection = [1,0,0,0,1,0,0,0,1]
 zeroOrigin = [0]*dimension
 zeroIndex = [0]*dimension
-
+ndreg=True
 def run(command, checkReturnValue=True, quiet=True):
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
     outText = ""
@@ -530,14 +531,10 @@ def mapCreateIdentity(size):
 def lmkApplyAffine(inPath, outPath, affine, spacing=[1.0,1.0,1.0]):
     if (not(type(spacing)) is list) or (len(spacing) != 3): raise Exception("spacing must be a list of length 3.")
     (outPath, outDirPath) = getOutPaths(inPath, outPath)
-
-    # Apply spacing to affine
-    tmpAffine = list(affine)[:]
-    for i in range(3): tmpAffine[9+i] =  tmpAffine[9+i] / spacing[i]
     
     # Apply affine to landmarks
-    lmk = landmarks.landmarks(inPath)
-    transformedLmk = lmk.Affine(tmpAffine)
+    lmk = landmarks(inPath, spacing)
+    transformedLmk = lmk.Affine(affine)
     transformedLmk.Write(outPath)
     return outPath
 
@@ -768,3 +765,31 @@ def maskPipeline(inPath, atlasPath, atlasLabelPath, outPath, spacing=[0.1,0.1,0.
 
     return outPath
 
+def lmkApplyAffine(inPath, outPath, affine, spacing=[1.0,1.0,1.0]):
+    if (not(type(spacing)) is list) or (len(spacing) != 3): raise Exception("spacing must be a list of length 3.")
+    (outPath, outDirPath) = getOutPaths(inPath, outPath)
+
+    # Apply affine to landmarks
+    lmk = landmarks()
+    lmk.Read(inPath, spacing)    
+    transformedLmk = lmk.Affine(affine)
+    transformedLmk.Write(outPath)
+    return outPath
+
+def lmkApplyField(inPath, outPath, fieldPath, spacing=[1.0, 1.0, 1.0]):
+    inLmk = landmarks(inPath,  spacing)
+
+    # Read field
+    field = imgRead(fieldPath)
+    field.SetDirection(identityDirection)
+
+    # Create transform
+    transform = sitk.DisplacementFieldTransform(dimension)
+    transform.SetInterpolator(sitk.sitkLinear)
+    transform.SetDisplacementField(sitk.Cast(field, sitk.sitkVectorFloat64))
+
+    for lmk in inLmk.GetLandmarks():
+        pass
+    
+    print(dir(transform))
+    
