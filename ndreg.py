@@ -223,6 +223,20 @@ def imgThreshold(inPath, outPath, threshold=0):
 
     return outPath
 
+def imgMask(inPath, maskPath, outPath):
+    """
+    Masks image at inPath with mask at maskPath and writes result to outPath.
+    """
+    inImg = imgRead(inPath)
+    maskImg = imgRead(maskPath)
+    outImg = sitk.MaskImageFilter().Execute(inImg, maskImg)
+
+    # Write output image
+    (outPath, outDirPath) = getOutPaths(inPath, outPath)    
+    imgWrite(outImg, outPath)
+
+    return  outPath
+
 def imgGenerateMask(inPath, outPath, threshold=None, forgroundValue=1):
     """
     Generates morphologically smooth mask with given forground value from input image.
@@ -630,7 +644,6 @@ def imgAffine(inPath, refPath, outPath, useNearestNeighborInterpolation=False, u
 
     return affine
 
-
 def imgMetamorphosis(inPath, refPath, outPath, alpha=0.01, beta=0.05, useNearestNeighborInterpolation=False, useBiasCorrection=False, verbose=True):
     """
     Performs Metamorphic LDDMM between input and refereence images
@@ -639,9 +652,10 @@ def imgMetamorphosis(inPath, refPath, outPath, alpha=0.01, beta=0.05, useNearest
 
     (outPath, outDirPath) = getOutPaths(inPath, outPath)    
     fieldPath = outDirPath+"field.vtk"
-    command = scriptDirPath+"metamorphosis/bin/metamorphosis --input {0} --reference {1} --output {2} --alpha {3} --beta {4} --displacement {5} --sigma 1 --steps 2".format(inPath, refPath, outPath, alpha, beta, fieldPath)
+    command = scriptDirPath+"metamorphosis/bin/metamorphosis --input {0} --reference {1} --output {2} --alpha {3} --beta {4} --displacement {5} --iterations 100 --sigma 1 --steps 4".format(inPath, refPath, outPath, alpha, beta, fieldPath)
     if(verbose): command += " --verbose"
     os.system(command)
+
 
     return fieldPath
 

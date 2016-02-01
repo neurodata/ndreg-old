@@ -19,7 +19,7 @@ MetamorphosisImageRegistrationMethodv4()
   m_NumberOfIterations = 100;         // 20
   m_BiasCorrection = true;            // true
   this->SetLearningRate(1e-1);        // 1e-1
-  this->SetMinimumLearningRate(1e-4); // 1e-4
+  this->SetMinimumLearningRate(1e-6); // 1e-4
   m_WeightImage = NULL;                                          // W
   m_VelocityKernel = TimeVaryingImageType::New();                // K_V
   m_InverseVelocityKernel = TimeVaryingImageType::New();         // L_V

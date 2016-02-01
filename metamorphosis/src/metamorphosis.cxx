@@ -252,7 +252,7 @@ int Metamorphosis(typename ParserType::Pointer parser)
 
   // Limit intensity of I(1) to intensity range of ouput image type
   itkStaticConstMacro(ImageDimension, unsigned int, ImageType::ImageDimension);
-  typedef unsigned char   OutputPixelType;
+  typedef unsigned int   OutputPixelType;
   typedef itk::Image<OutputPixelType,ImageDimension>  OutputImageType;
 
   typedef itk::MinimumMaximumImageCalculator<ImageType>  CalculatorType;
