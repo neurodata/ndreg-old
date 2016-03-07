@@ -34,6 +34,7 @@ int main(int argc, char* argv[])
     cerr<<"\t"<<argv[0]<<" --input InputPath --reference ReferencePath --output OutputPath"<<endl;
     cerr<<"\t\t[ --weight InputWeightPath"<<endl;
     cerr<<"\t\t  --displacement OutputDisplacementPath"<<endl;
+    cerr<<"\t\t  --inverseDisplacement OutputInverseDisplacementPath"<<endl;
     cerr<<"\t\t  --bias OutputBiasPath"<<endl;
     cerr<<"\t\t  --grid OutputGridPath"<<endl;
     cerr<<"\t\t  --alpha RegistrationSmoothness"<<endl;
@@ -252,7 +253,7 @@ int Metamorphosis(typename ParserType::Pointer parser)
 
   // Limit intensity of I(1) to intensity range of ouput image type
   itkStaticConstMacro(ImageDimension, unsigned int, ImageType::ImageDimension);
-  typedef unsigned int   OutputPixelType;
+  typedef unsigned char   OutputPixelType;
   typedef itk::Image<OutputPixelType,ImageDimension>  OutputImageType;
 
   typedef itk::MinimumMaximumImageCalculator<ImageType>  CalculatorType;
@@ -291,13 +292,13 @@ int Metamorphosis(typename ParserType::Pointer parser)
   }
 
   // Write displacement, \phi_{10}
+  typedef typename TransformType::DisplacementFieldType  DisplacementFieldType;
+  typedef itk::ImageFileWriter<DisplacementFieldType>    DisplacementWriterType;
   string displacementPath;
   parser->GetCommandLineArgument("--displacement",displacementPath);
 
   if(displacementPath != "")
   {
-    typedef typename TransformType::DisplacementFieldType  DisplacementFieldType;
-    typedef itk::ImageFileWriter<DisplacementFieldType>    DisplacementWriterType;
     typename DisplacementWriterType::Pointer displacementWriter = DisplacementWriterType::New();
     displacementWriter->SetInput(transform->GetDisplacementField()); // \phi_{10}
     displacementWriter->SetFileName(displacementPath);
@@ -311,6 +312,32 @@ int Metamorphosis(typename ParserType::Pointer parser)
       cerr<<exceptionObject<<endl;
       returnValue = EXIT_FAILURE;
     }
+  }
+
+  // Write inverse displacement, \phi_{01}
+  string inverseDisplacementPath;
+  parser->GetCommandLineArgument("--inverseDisplacement", inverseDisplacementPath);
+  if(inverseDisplacementPath != "")
+  {
+    transform->SetNumberOfIntegrationSteps(metamorphosis->GetNumberOfTimeSteps()+2);
+    transform->SetLowerTimeBound(0.0);
+    transform->SetUpperTimeBound(1.0);
+    transform->IntegrateVelocityField();
+
+    typename DisplacementWriterType::Pointer inverseDisplacementWriter = DisplacementWriterType::New();
+    inverseDisplacementWriter->SetInput(transform->GetDisplacementField()); // \phi_{10}
+    inverseDisplacementWriter->SetFileName(inverseDisplacementPath);
+    try
+    {
+      inverseDisplacementWriter->Update();
+    }
+    catch(itk::ExceptionObject& exceptionObject)
+    {
+      cerr<<"Error: Could not write inverse displacement field: "<<inverseDisplacementPath<<endl;
+      cerr<<exceptionObject<<endl;
+      returnValue = EXIT_FAILURE;
+    }
+
   }
 
   // Write bias, B(1)
@@ -342,7 +369,8 @@ int Metamorphosis(typename ParserType::Pointer parser)
     }
   }
 
-  // Write grid
+  // Write grid.
+  // TODO grid writing broken.  Need to fix.
   string gridPath;
   parser->GetCommandLineArgument("--grid",gridPath);
 
