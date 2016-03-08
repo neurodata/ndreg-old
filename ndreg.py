@@ -644,6 +644,34 @@ def imgAffine(inPath, refPath, outPath, useNearestNeighborInterpolation=False, u
 
     return affine
 
+def imgMI(inPath, refPath, numBins=64):
+    #inImg = imgRead(inPath)
+    #refImg = imgRead(refPath)
+    
+    inImg = sitk.Normalize(imgRead(inPath))
+    refImg = sitk.Normalize(imgRead(refPath))
+
+    # Evaluate Metric
+    # In SimpleITK the metric can't be accessed directly.
+    # Therefore we create a do-nothing registration method which uses an identity transform to get the metric value
+    identityTransform = sitk.Transform()
+    tmpRegistration = sitk.ImageRegistrationMethod()
+
+    tmpRegistration.SetMetricSamplingStrategy(tmpRegistration.RANDOM)
+    tmpRegistration.SetMetricSamplingPercentage(0.01)
+    #tmpRegistration.SetMetricAsJointHistogramMutualInformation(numBins)
+    #tmpRegistration.SetMetricAsMeanSquares()
+    tmpRegistration.SetMetricAsMattesMutualInformation(numBins)
+    tmpRegistration.SetInterpolator(sitk.sitkNearestNeighbor)
+    tmpRegistration.SetInitialTransform(identityTransform)
+    tmpRegistration.SetOptimizerAsGradientDescent(learningRate=0.000001, numberOfIterations=1)
+    tmpRegistration.Execute( sitk.Cast(refImg,sitk.sitkFloat32),sitk.Cast(inImg, sitk.sitkFloat32) )
+
+    return tmpRegistration.GetMetricValue()
+
+
+
+
 def imgMetamorphosis(inPath, refPath, outPath, alpha=0.01, beta=0.05, useNearestNeighborInterpolation=False, useBiasCorrection=False, verbose=True):
     """
     Performs Metamorphic LDDMM between input and refereence images
@@ -806,4 +834,6 @@ def lmkApplyField(inPath, outPath, fieldPath, spacing=[1.0, 1.0, 1.0]):
         pass
     
     print(dir(transform))
+
+
     
