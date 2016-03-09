@@ -251,7 +251,8 @@ class landmarks:
             x0 = mat(self.landmarkList[i][1:]).reshape(3,1)
             A = mat(affine[:9]).reshape(3,3)
             b = mat(affine[9:]).reshape(3,1)
-            x1 = A.I*(x0 - b)
+            #x1 = A.I*(x0 - b)
+            x1 = A*x0 + b
             lmk = [labelList[i]] +  x1.flatten().tolist()[0]
             lmkList.append(lmk)
         return landmarks(lmkList, self.spacing)

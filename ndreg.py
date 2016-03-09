@@ -149,6 +149,18 @@ def imgRead(path):
     """
     return sitk.ReadImage(path)
 
+def imgSize(path):
+    """
+    Convenience function to get size of image
+    """
+    return imgRead(path).GetSize()
+
+def imgSpacing(path):
+    """
+    Convenience function to get spacing of image
+    """
+    return imgRead(path).GetSpacing()
+    
 
 def imgWrite(img, path):
     """
@@ -542,15 +554,6 @@ def mapCreateIdentity(size):
     spacing = [1,1,1]
     return sitk.PhysicalPointImageSource().Execute(vectorType, size, zeroOrigin, spacing, identityDirection)
 
-def lmkApplyAffine(inPath, outPath, affine, spacing=[1.0,1.0,1.0]):
-    if (not(type(spacing)) is list) or (len(spacing) != 3): raise Exception("spacing must be a list of length 3.")
-    (outPath, outDirPath) = getOutPaths(inPath, outPath)
-    
-    # Apply affine to landmarks
-    lmk = landmarks(inPath, spacing)
-    transformedLmk = lmk.Affine(affine)
-    transformedLmk.Write(outPath)
-    return outPath
 
 def affineInverse(affine):
     # x0 = A0*x1 + b0
@@ -810,13 +813,13 @@ def maskPipeline(inPath, atlasPath, atlasLabelPath, outPath, spacing=[0.1,0.1,0.
 def lmkApplyAffine(inPath, outPath, affine, spacing=[1.0,1.0,1.0]):
     if (not(type(spacing)) is list) or (len(spacing) != 3): raise Exception("spacing must be a list of length 3.")
     (outPath, outDirPath) = getOutPaths(inPath, outPath)
-
+    
     # Apply affine to landmarks
-    lmk = landmarks()
-    lmk.Read(inPath, spacing)    
+    lmk = landmarks(inPath, spacing)
     transformedLmk = lmk.Affine(affine)
     transformedLmk.Write(outPath)
     return outPath
+
 
 def lmkApplyField(inPath, outPath, fieldPath, spacing=[1.0, 1.0, 1.0]):
     inLmk = landmarks(inPath,  spacing)
@@ -830,10 +833,17 @@ def lmkApplyField(inPath, outPath, fieldPath, spacing=[1.0, 1.0, 1.0]):
     transform.SetInterpolator(sitk.sitkLinear)
     transform.SetDisplacementField(sitk.Cast(field, sitk.sitkVectorFloat64))
 
+    outLmkList = []
     for lmk in inLmk.GetLandmarks():
-        pass
-    
-    print(dir(transform))
+        name = lmk[0]
+        inPoint = lmk[1:]
+        outPoint = transform.TransformPoint(inPoint)
+        outLmkList += [[name]+list(outPoint)]
+
+    (outPath, outDirPath) = getOutPaths(inPath, outPath)
+    outLmk = landmarks(outLmkList, spacing)
+    outLmk.Write(outPath)
+    return outPath
 
 def lmkDistances(inPath, refPath, inSpacing=[1.0, 1.0, 1.0], refSpacing=[1.0, 1.0, 1.0]):
     """
@@ -853,3 +863,5 @@ def imgDice(inPath, refPath):
     overlapCalculator = sitk.LabelOverlapMeasuresImageFilter()
     overlapCalculator.Execute(inMask, refMask)
     return overlapCalculator.GetDiceCoefficient()
+
+
