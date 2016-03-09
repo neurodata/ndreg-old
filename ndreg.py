@@ -835,5 +835,21 @@ def lmkApplyField(inPath, outPath, fieldPath, spacing=[1.0, 1.0, 1.0]):
     
     print(dir(transform))
 
+def lmkDistances(inPath, refPath, inSpacing=[1.0, 1.0, 1.0], refSpacing=[1.0, 1.0, 1.0]):
+    """
+    Return list of distances between corresponding landmarks at inPath and refPath.
+    If landmarks are in voxel space it may be necessary to provide the voxel spacing using the inSpacing and refSpacing parameters
+    """
+    inLmk = landmarks(inPath, inSpacing)
+    refLmk = landmarks(refPath, refSpacing)
+    return inLmk.GetDistances(refLmk)
 
-    
+def imgDice(inPath, refPath):
+    """
+    Computes dice coefficient between two mask images
+    """
+    inMask = imgRead(inPath)
+    refMask = imgRead(refPath)
+    overlapCalculator = sitk.LabelOverlapMeasuresImageFilter()
+    overlapCalculator.Execute(inMask, refMask)
+    return overlapCalculator.GetDiceCoefficient()
