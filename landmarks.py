@@ -272,7 +272,8 @@ class landmarks:
             lmk  = [labelList[i]] + x1.tolist()[0]
             lmkList.append(lmk)
         return landmarks(lmkList, self.spacing)
-
+    
+    """
     def Resample(self, inSpacing, outSpacing):
         outLandmarkList = []
         for inLandmark in self.landmarkList:
@@ -284,6 +285,7 @@ class landmarks:
             outLandmarkList.append(outLandmark)
 
         return landmarks(outLandmarkList)
+    """
 
     def Crop(self, size):
         if (not(type(size)) is list) or (len(size) != 3): raise Exception("size must be a list of length 3.")

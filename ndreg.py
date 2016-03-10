@@ -543,9 +543,37 @@ def fieldToMap(inPath, outPath):
 
     return outPath
 
-def mapToField(inPath, outPath, spacing=[]):
-    #TODO
-    return
+def mapToField(inPath, outPath, inSpacing=[]):
+    """
+    Convert input displacement field into CIS compatible map.
+    The spacing metadata of CIS maps is often incorrect.
+    Thus the user can set it using the inSpacing parameter.
+    """
+    inMap = imgRead(inPath)
+    inSize = inMap.GetSize()
+    if inSpacing == []:
+        inSpacing = inMap.GetSpacing()
+    else:
+        if (not(type(inSpacing)) is list) or (len(inSpacing) != 3): raise Exception("inSspacing must be a list of length 3.")
+        inMap.SetSpacing(inSpacing)
+
+    idMap = mapCreateIdentity(inSize)
+    idMap.CopyInformation(inMap)
+
+    outFieldComponentList = []
+    for i in range(dimension):
+        idMapComponent = sitk.VectorIndexSelectionCastImageFilter().Execute(idMap, i, vectorComponentType)
+        inMapComponent = sitk.VectorIndexSelectionCastImageFilter().Execute(inMap, i, vectorComponentType)
+        outFieldComponent = (inMapComponent - idMapComponent) * inSpacing[i]
+        outFieldComponentList += [outFieldComponent]
+    
+    outField = sitk.ComposeImageFilter().Execute(outFieldComponentList)
+
+    # Write output field
+    (outPath, outDirPath) = getOutPaths("", outPath)    
+    imgWrite(outField, outPath)
+    
+    return outPath
 
 def mapCreateIdentity(size):
     """
@@ -683,7 +711,8 @@ def imgMetamorphosis(inPath, refPath, outPath, alpha=0.01, beta=0.05, useNearest
 
     (outPath, outDirPath) = getOutPaths(inPath, outPath)    
     fieldPath = outDirPath+"field.vtk"
-    command = scriptDirPath+"metamorphosis/bin/metamorphosis --input {0} --reference {1} --output {2} --alpha {3} --beta {4} --displacement {5} --iterations 100 --sigma 1 --steps 4".format(inPath, refPath, outPath, alpha, beta, fieldPath)
+    invFieldPath = outDirPath+"invField.vtk"
+    command = scriptDirPath+"metamorphosis/bin/metamorphosis --input {0} --reference {1} --output {2} --alpha {3} --beta {4} --displacement {5} --inverseDisplacement {6} --iterations 100 --sigma 1 --steps 4".format(inPath, refPath, outPath, alpha, beta, fieldPath, invFieldPath)
     if(verbose): command += " --verbose"
     os.system(command)
 
