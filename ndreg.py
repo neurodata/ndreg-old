@@ -20,6 +20,13 @@ identityDirection = [1,0,0,0,1,0,0,0,1]
 zeroOrigin = [0]*dimension
 zeroIndex = [0]*dimension
 ndreg=True
+
+def isIterable(obj):
+    """
+    Returns True if obj is a list, tuple or any other iterable object
+    """
+    return hasattr([],'__iter__')
+
 def run(command, checkReturnValue=True, quiet=True):
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
     outText = ""
@@ -234,6 +241,26 @@ def imgThreshold(inPath, outPath, threshold=0):
     imgWrite(outImg, outPath)
 
     return outPath
+
+def imgMaskOverlap(inPath, refPath, outPath):
+    """
+    Generates image showing overlap of input and reference masks.
+    """
+    inValue = 150
+    refValue = 75    
+
+    inMask = imgRead(inPath)
+    inMask = sitk.BinaryThreshold(inMask, 0, 0, 0, inValue)
+
+    refMask = imgRead(refPath)
+    refMask = sitk.BinaryThreshold(refMask, 0, 0, 0, refValue)
+
+    outImg = inMask + refMask
+    (outPath, outDirPath) = getOutPaths(inPath, outPath)    
+    imgWrite(outImg, outPath)
+
+    return outPath
+
 
 def imgMask(inPath, maskPath, outPath):
     """
@@ -554,7 +581,7 @@ def mapToField(inPath, outPath, inSpacing=[]):
     if inSpacing == []:
         inSpacing = inMap.GetSpacing()
     else:
-        if (not(type(inSpacing)) is list) or (len(inSpacing) != 3): raise Exception("inSspacing must be a list of length 3.")
+        if (not isIterable(inSpacing)) or (len(inSpacing) != 3): raise Exception("inSspacing must be a list of length 3.")
         inMap.SetSpacing(inSpacing)
 
     idMap = mapCreateIdentity(inSize)
@@ -595,8 +622,8 @@ def affineInverse(affine):
 
 def affineApplyAffine(inAffine, affine):
     """ A_{outAffine} = A_{inAffine} \circ A_{affine} """
-    if (not(type(inAffine)) is list) or (len(inAffine) != 12): raise Exception("inAffine must be a list of length 12.")
-    if (not(type(affine)) is list) or (len(affine) != 12): raise Exception("affine must be a list of length 12.")
+    if (not(isIterable(inAffine))) or (len(inAffine) != 12): raise Exception("inAffine must be a list of length 12.")
+    if (not((affine)) is list) or (len(affine) != 12): raise Exception("affine must be a list of length 12.")
     A0 = array(affine[0:9]).reshape(3,3)
     b0 = array(affine[9:12]).reshape(3,1)
     A1 = array(inAffine[0:9]).reshape(3,3)
@@ -840,7 +867,7 @@ def maskPipeline(inPath, atlasPath, atlasLabelPath, outPath, spacing=[0.1,0.1,0.
     return outPath
 
 def lmkApplyAffine(inPath, outPath, affine, spacing=[1.0,1.0,1.0]):
-    if (not(type(spacing)) is list) or (len(spacing) != 3): raise Exception("spacing must be a list of length 3.")
+    if (not(isIterable(spacing))) or (len(spacing) != 3): raise Exception("spacing must be a list of length 3.")
     (outPath, outDirPath) = getOutPaths(inPath, outPath)
     
     # Apply affine to landmarks
@@ -850,7 +877,7 @@ def lmkApplyAffine(inPath, outPath, affine, spacing=[1.0,1.0,1.0]):
     return outPath
 
 
-def lmkApplyField(inPath, outPath, fieldPath, spacing=[1.0, 1.0, 1.0]):
+def lmkApplyField(inPath, fieldPath, outPath, spacing=[1.0, 1.0, 1.0]):
     inLmk = landmarks(inPath,  spacing)
 
     # Read field
@@ -883,7 +910,7 @@ def lmkDistances(inPath, refPath, inSpacing=[1.0, 1.0, 1.0], refSpacing=[1.0, 1.
     refLmk = landmarks(refPath, refSpacing)
     return inLmk.GetDistances(refLmk)
 
-def imgDice(inPath, refPath):
+def imgMaskDice(inPath, refPath):
     """
     Computes dice coefficient between two mask images
     """
