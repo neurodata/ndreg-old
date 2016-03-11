@@ -6,7 +6,7 @@ import SimpleITK as sitk
 import ndio.remote.OCP as ocp
 import sys, os, math, glob, subprocess, shutil
 import numpy as np
-from numpy import mat, array, dot
+from numpy import mat, array, dot, sum
 from time import time
 from itertools import product
 from landmarks import *
@@ -275,6 +275,31 @@ def imgMask(inPath, maskPath, outPath):
     imgWrite(outImg, outPath)
 
     return  outPath
+
+def imgLargestMaskObject(inPath, outPath):
+    """
+    Writes mask of largest object in input mask
+    """
+    maskImg = imgRead(inPath)
+    ccFilter = sitk.ConnectedComponentImageFilter()
+    labelImg = ccFilter.Execute(maskImg)
+    numberOfLabels = ccFilter.GetObjectCount()
+    labelArray = sitk.GetArrayFromImage(labelImg)
+    largestLabel = 0
+    largestSize = 0
+    for i in range(1,numberOfLabels+1):
+        size = sum(labelArray == i)
+        if size > largestSize:
+            largestSize = size
+            largestLabel = i
+
+    outImg = sitk.GetImageFromArray((labelArray==largestLabel).astype(np.int16))
+    outImg.CopyInformation(maskImg) # output image should have same metadata as input mask image
+
+    (outPath, outDirPath) = getOutPaths(inPath, outPath)    
+    imgWrite(outImg, outPath)
+    return outPath
+
 
 def imgGenerateMask(inPath, outPath, threshold=None, forgroundValue=1):
     """
