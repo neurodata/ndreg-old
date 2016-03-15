@@ -276,11 +276,8 @@ def imgMask(inPath, maskPath, outPath):
 
     return  outPath
 
-def imgLargestMaskObject(inPath, outPath):
-    """
-    Writes mask of largest object in input mask
-    """
-    maskImg = imgRead(inPath)
+
+def largestMaskObject(maskImg):
     ccFilter = sitk.ConnectedComponentImageFilter()
     labelImg = ccFilter.Execute(maskImg)
     numberOfLabels = ccFilter.GetObjectCount()
@@ -295,6 +292,15 @@ def imgLargestMaskObject(inPath, outPath):
 
     outImg = sitk.GetImageFromArray((labelArray==largestLabel).astype(np.int16))
     outImg.CopyInformation(maskImg) # output image should have same metadata as input mask image
+    return outImg
+
+
+def imgLargestMaskObject(inPath, outPath):
+    """
+    Writes mask of largest object in input mask
+    """
+    maskImg = imgRead(inPath)
+    outImg = largestMaskObject(maskImg)
 
     (outPath, outDirPath) = getOutPaths(inPath, outPath)    
     imgWrite(outImg, outPath)
@@ -750,7 +756,7 @@ def imgMI(inPath, refPath, numBins=64):
     tmpRegistration.SetMetricAsMattesMutualInformation(numBins)
     tmpRegistration.Execute( sitk.Cast(refImg,sitk.sitkFloat32),sitk.Cast(inImg, sitk.sitkFloat32) )
 
-    return tmpRegistration.GetMetricValue()
+    return -tmpRegistration.GetMetricValue()
 
 def imgMSE(inPath, refPath):
     """
@@ -778,8 +784,8 @@ def imgMetamorphosis(inPath, refPath, outPath, alpha=0.01, beta=0.05, useNearest
     invFieldPath = outDirPath+"invField.vtk"
     command = scriptDirPath+"metamorphosis/bin/metamorphosis --input {0} --reference {1} --output {2} --alpha {3} --beta {4} --displacement {5} --inverseDisplacement {6} --iterations 100 --sigma 1 --steps 4".format(inPath, refPath, outPath, alpha, beta, fieldPath, invFieldPath)
     if(verbose): command += " --verbose"
-    os.system(command)
-
+    (returnValue, outText) = run(command, quiet=False)
+    txtWrite(outText, outDirPath+"log.txt")
 
     return fieldPath
 

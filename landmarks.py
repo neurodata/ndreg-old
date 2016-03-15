@@ -71,6 +71,20 @@ class landmarks:
                     if landmark[0] == label: outLandmarkList.append(landmark)
             return outLandmarkList
 
+    def GetPoints(self, labelList=[]):
+        """
+        Returns list of lanmarks in the format
+            [[x1,y1,...],...,[xN,yN,...]]
+        """
+        if labelList==[]:
+            return self.landmarkList[:]
+        else:
+            outPointList = []
+            for label in labelList:
+                for landmark in self.landmarkList:
+                    if landmark[0] == label: outPointList.append(landmark[1:])
+            return outPointList
+
     
     def SetLabels(self,labelList):
         """
