@@ -238,16 +238,19 @@ MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage, TWeightImage>:
 InitializeKernels(TimeVaryingImagePointer kernel, TimeVaryingImagePointer inverseKernel, double alpha, double gamma)
 {
   /*
+  ITK computes FFT using either VNL or FFTW
   FFTW runs most efficiently when each diminsions size has a small prime factorization.
   This means each diminsion's size has prime factors that are <= 13.
+  VnlFFT only works for prime factors 2,3 and 5.
   Therefore we create a kernel satisfying these conditions.
   See "FFT based convolution" by Gaetan Lehmann for more details.
   */
+  
   typename TimeVaryingImageType::IndexType  index = this->m_OutputTransform->GetVelocityField()->GetLargestPossibleRegion().GetIndex();
   typename TimeVaryingImageType::SizeType   size = this->m_OutputTransform->GetVelocityField()->GetLargestPossibleRegion().GetSize();
 
   // Create list of small prime numbers...
-  SizeValueType smallPrimes[] = {2,3,5,7,11,13};
+  SizeValueType smallPrimes[] = {2,3,5};
 
   // For each dimension...
   for(unsigned int i = 0; i < size.GetSizeDimension(); i++)
