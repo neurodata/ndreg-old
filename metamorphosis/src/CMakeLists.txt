@@ -10,5 +10,5 @@ else(ITK_FOUND)
     message(FATAL_ERROR "ITK not found. Please set ITK_DIR.")
 endif(ITK_FOUND)
 
-add_executable(metamorphosis metamorphosis.cxx itkMetamorphosisImageRegistrationMethodv4.h itkMetamorphosisImageRegistrationMethodv4.hxx itkSumImageFilter.h itkSumImageFilter.hxx itkDebug.h)
+add_executable(metamorphosis metamorphosis.cxx itkMetamorphosisImageRegistrationMethodv4.h itkMetamorphosisImageRegistrationMethodv4.hxx)
 target_link_libraries(metamorphosis ${ITK_LIBRARIES})

@@ -10,8 +10,7 @@
 #include "itkImageFileWriter.h"
 #include "itkCastImageFilter.h"
 #include "itkAddImageFilter.h"
-#include "itkMinimumMaximumImageCalculator.h"
-#include "itkIntensityWindowingImageFilter.h"
+#include "itkClampImageFilter.h"
 #include "itkBSplineKernelFunction.h"
 #include "itkGridImageSource.h"
 #include "itkMetamorphosisImageRegistrationMethodv4.h"
@@ -20,7 +19,7 @@ using namespace std;
 
 typedef itk::CommandLineArgumentParser  ParserType;
 template<typename TMetamorphosis> class MetamorphosisObserver;
-template<typename TImage> int Metamorphosis(typename ParserType::Pointer parser);
+template<typename TImage> int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Pointer parser);
 
 int main(int argc, char* argv[])
 {
@@ -28,15 +27,14 @@ int main(int argc, char* argv[])
   ParserType::Pointer parser = ParserType::New();
   parser->SetCommandLineArguments(argc,argv);
 
-  if( !(parser->ArgumentExists("--input") && parser->ArgumentExists("--reference") && parser->ArgumentExists("--output")) )
+  if( !(parser->ArgumentExists("--in") && parser->ArgumentExists("--ref") && parser->ArgumentExists("--out")) )
   {
     cerr<<"Usage:"<<endl;
-    cerr<<"\t"<<argv[0]<<" --input InputPath --reference ReferencePath --output OutputPath"<<endl;
-    cerr<<"\t\t[ --weight InputWeightPath"<<endl;
-    cerr<<"\t\t  --displacement OutputDisplacementPath"<<endl;
-    cerr<<"\t\t  --inverseDisplacement OutputInverseDisplacementPath"<<endl;
+    cerr<<"\t"<<argv[0]<<" --in InputPath --ref ReferencePath --out OutputPath"<<endl;
+    cerr<<"\t\t[ --field OutputDisplacementFieldPath"<<endl;
     cerr<<"\t\t  --bias OutputBiasPath"<<endl;
     cerr<<"\t\t  --grid OutputGridPath"<<endl;
+    cerr<<"\t\t  --scale Scale"<<endl;
     cerr<<"\t\t  --alpha RegistrationSmoothness"<<endl;
     cerr<<"\t\t  --beta BiasSmoothness"<<endl;
     cerr<<"\t\t  --sigma Sigma"<<endl;
@@ -48,52 +46,68 @@ int main(int argc, char* argv[])
     return EXIT_FAILURE;
   }
 
-  /** Read input (moving) image information*/
-  string inputPath;
-  parser->GetCommandLineArgument("--input",inputPath);
-  /*
-  itk::ImageIOBase::Pointer io = itk::ImageIOFactory::CreateImageIO(inputPath.c_str(), itk::ImageIOFactory::ReadMode);
+  /** Read reference image as 3D volume */
+  const unsigned int numberOfDimensions = 3;
+  typedef float      PixelType;
+  typedef itk::Image<PixelType,2>                    Image2DType;
+  typedef itk::Image<PixelType,3>                    Image3DType;
+
+  string referencePath;
+  parser->GetCommandLineArgument("--ref",referencePath);
+  typedef itk::ImageFileReader<Image3DType> ReaderType;
+  typename ReaderType::Pointer referenceReader = ReaderType::New();
+  referenceReader->SetFileName(referencePath);
   try
   {
-    io->ReadImageInformation();
+    referenceReader->Update();
   }
   catch(itk::ExceptionObject& exceptionObject)
   {
-    cerr<<"Error: Could not read input image: "<<inputPath<<endl;
+    cerr<<"Error: Could not read reference image: "<<referencePath<<endl;
     cerr<<exceptionObject<<endl;
     return EXIT_FAILURE;
   }
-  */
-  /** Run Metamorphosis */
-  typedef float      PixelType;
-  switch(3)//io->GetNumberOfDimensions())
+
+  typename Image3DType::Pointer referenceImage = referenceReader->GetOutput();
+
+  /** Setup metamorphosis */
+  if(referenceImage->GetLargestPossibleRegion().GetSize()[numberOfDimensions-1] <= 1) // If reference image is 2D...
   {
-    case 2:
-      // Run 2D Metamorphosis
-      typedef itk::Image<PixelType,2> Image2DType;
-      return Metamorphosis<Image2DType>(parser);
-    case 3:
-      // Run 3D Metamorphosis
-      typedef itk::Image<PixelType,3> Image3DType;
-      return Metamorphosis<Image3DType>(parser);
-    default:
-      cerr<<"Error only 2D and 3D images are supported.";
-      return EXIT_FAILURE;
+    // Do 2D metamorphosis
+    Image3DType::RegionType region = referenceImage->GetLargestPossibleRegion();
+    Image3DType::SizeType   size = region.GetSize();
+    size[numberOfDimensions-1] = 0;
+    region.SetSize(size);
+
+    typedef itk::ExtractImageFilter<Image3DType, Image2DType> ExtractorType;
+    ExtractorType::Pointer extractor = ExtractorType::New();
+    extractor->SetInput(referenceImage);
+    extractor->SetExtractionRegion(region);
+    extractor->SetDirectionCollapseToIdentity();
+    extractor->Update();
+
+    return Metamorphosis<Image2DType>(extractor->GetOutput(), parser); 
+  }
+  else
+  {
+    // Do 3D metamorphosis
+    return Metamorphosis<Image3DType>(referenceImage, parser);
   }
 
 } // end main
 
+
 template<typename TImage>
-int Metamorphosis(typename ParserType::Pointer parser)
+int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Pointer parser)
 {
-  /** Construct Metamorphosis */
+  // Construct metamorphosis
   typedef TImage ImageType;
-  typedef itk::MetamorphosisImageRegistrationMethodv4<ImageType,ImageType,ImageType>  MetamorphosisType;
+  typedef itk::MetamorphosisImageRegistrationMethodv4<ImageType,ImageType>  MetamorphosisType;
   typename MetamorphosisType::Pointer metamorphosis = MetamorphosisType::New();
 
-  /** Set input (moving) image */
+  // Read input (moving) image
   string inputPath;
-  parser->GetCommandLineArgument("--input",inputPath);
+  parser->GetCommandLineArgument("--in",inputPath);
 
   typedef itk::ImageFileReader<ImageType> ReaderType;
   typename ReaderType::Pointer inputReader = ReaderType::New();
@@ -110,57 +124,28 @@ int Metamorphosis(typename ParserType::Pointer parser)
   }
 
   typename ImageType::Pointer movingImage = inputReader->GetOutput();
+
+  // Set input (moving) image
   metamorphosis->SetMovingImage(movingImage); // I_0
 
-  /** Set reference (fixed) image */
-  string referencePath;
-  parser->GetCommandLineArgument("--reference",referencePath);
-
-  typename ReaderType::Pointer referenceReader = ReaderType::New();
-  referenceReader->SetFileName(referencePath);
-  try
-  {
-    referenceReader->Update();
-  }
-  catch(itk::ExceptionObject& exceptionObject)
-  {
-    cerr<<"Error: Could not read reference image: "<<referencePath<<endl;
-    cerr<<exceptionObject<<endl;
-    return EXIT_FAILURE;
-  }
-
-  typename ImageType::Pointer fixedImage = referenceReader->GetOutput();
+  // Set reference (fixed) image
   metamorphosis->SetFixedImage(fixedImage);   // I_1
 
-  if(parser->ArgumentExists("--weight"))
+  // Set metamorphosis parameters 
+  if(parser->ArgumentExists("--scale"))
   {
-    /** Set weight image */
-    string weightPath;
-    parser->GetCommandLineArgument("--weight",weightPath);
-    
-    typename ReaderType::Pointer weightReader = ReaderType::New();
-    weightReader->SetFileName(weightPath);
-    try
-    {
-      weightReader->Update();
-    }
-    catch(itk::ExceptionObject& exceptionObject)
-    {
-      cerr<<"Error: Could not weight image: "<<weightPath<<endl;
-      cerr<<exceptionObject<<endl;
-      return EXIT_FAILURE;
-    }
-
-    metamorphosis->SetWeightImage(weightReader->GetOutput());
+    float scale;
+    parser->GetCommandLineArgument("--scale",scale);
+    metamorphosis->SetScale(scale);
   }
 
-  /** Set metamorphosis parameters */
   if(parser->ArgumentExists("--alpha"))
   {
     double alpha;
     parser->GetCommandLineArgument("--alpha",alpha);
     metamorphosis->SetRegistrationSmoothness(alpha);
   }
+
 
   if(parser->ArgumentExists("--beta"))
   {
@@ -169,10 +154,11 @@ int Metamorphosis(typename ParserType::Pointer parser)
 
     if(beta < 0)
     {
-      metamorphosis->BiasCorrectionOff();
+      metamorphosis->UseBiasOff();
     }
     else
     {
+      metamorphosis->UseBiasOn();
       metamorphosis->SetBiasSmoothness(beta);
     }
   }
@@ -205,6 +191,7 @@ int Metamorphosis(typename ParserType::Pointer parser)
     metamorphosis->SetNumberOfIterations(numberOfIterations);
   }
 
+
   if(parser->ArgumentExists("--verbose"))
   {
     typedef MetamorphosisObserver<MetamorphosisType>  MetamorphosisObserverType;
@@ -212,7 +199,7 @@ int Metamorphosis(typename ParserType::Pointer parser)
     metamorphosis->AddObserver(itk::IterationEvent(),observer);
   }
 
-  /** Run metamorphosis */
+  // Run metamorphosis 
   itk::TimeProbe clock;
   clock.Start();
   try
@@ -229,13 +216,17 @@ int Metamorphosis(typename ParserType::Pointer parser)
 
   cout<<"E = "<<metamorphosis->GetEnergy()<<" ("<<metamorphosis->GetEnergy()/metamorphosis->GetInitialEnergy()*100<<"%)"<<endl;
   cout<<"Time = "<<clock.GetTotal()<<"s"<<" ("<<clock.GetTotal()/60<<"m)"<<endl;
-
-  /** Write output images */
+ 
+  // Write output images 
   int returnValue = EXIT_SUCCESS;
 
   // Compute I_0 o \phi_{10}
   typedef typename MetamorphosisType::OutputTransformType TransformType;
   typename TransformType::Pointer transform = const_cast<TransformType*>(metamorphosis->GetOutput()->Get()); // \phi_{10}
+  transform->SetNumberOfIntegrationSteps(metamorphosis->GetNumberOfTimeSteps()+2);
+  transform->SetLowerTimeBound(1.0);
+  transform->SetUpperTimeBound(0.0);
+  transform->IntegrateVelocityField();
 
   typedef itk::ResampleImageFilter<ImageType,ImageType,typename TransformType::ScalarType>   OutputResamplerType;
   typename OutputResamplerType::Pointer outputResampler = OutputResamplerType::New();
@@ -244,8 +235,12 @@ int Metamorphosis(typename ParserType::Pointer parser)
   outputResampler->UseReferenceImageOn();
   outputResampler->SetReferenceImage(fixedImage);
 
+
+  outputResampler->Update();
+  writeImage<ImageType>(outputResampler->GetOutput(),"test.tif");
+
   // Compute I(1) = I_0 o \phi_{10} + B(1)
-  typedef itk::AddImageFilter<ImageType,ImageType,ImageType>  AdderType;
+  typedef itk::AddImageFilter<ImageType,typename MetamorphosisType::BiasImageType,ImageType>  AdderType;
   typename AdderType::Pointer adder = AdderType::New();
   adder->SetInput1(outputResampler->GetOutput());  // I_0 o \phi_{10}
   adder->SetInput2(metamorphosis->GetBias());      // B(1)
@@ -256,29 +251,19 @@ int Metamorphosis(typename ParserType::Pointer parser)
   typedef unsigned char   OutputPixelType;
   typedef itk::Image<OutputPixelType,ImageDimension>  OutputImageType;
 
-  typedef itk::MinimumMaximumImageCalculator<ImageType>  CalculatorType;
-  typename CalculatorType::Pointer calculator = CalculatorType::New();
-  calculator->SetImage(adder->GetOutput());  // I(1)
-  calculator->Compute();
-
-  double outputMinimum = std::max((typename ImageType::PixelType)itk::NumericTraits<OutputPixelType>::min(),calculator->GetMinimum());
-  double outputMaximum = std::min((typename ImageType::PixelType)itk::NumericTraits<OutputPixelType>::max(),calculator->GetMaximum());
-
-  typedef itk::IntensityWindowingImageFilter<ImageType,OutputImageType>  IntensityWindowerType;
-  typename IntensityWindowerType::Pointer intensityWindower = IntensityWindowerType::New();
-  intensityWindower->SetInput(adder->GetOutput()); // I(1)
-  intensityWindower->SetWindowMinimum(outputMinimum);
-  intensityWindower->SetWindowMaximum(outputMaximum);
-  intensityWindower->SetOutputMinimum(outputMinimum);
-  intensityWindower->SetOutputMaximum(outputMaximum);
+  typedef itk::ClampImageFilter<ImageType, OutputImageType> ClamperType;
+  typename ClamperType::Pointer clamper = ClamperType::New();
+  clamper->SetInput(adder->GetOutput());
+  clamper->SetBounds(itk::NumericTraits<OutputPixelType>::min(), itk::NumericTraits<OutputPixelType>::max());
+  clamper->Update();
 
   // Write output image, I(1)
   string outputPath;
-  parser->GetCommandLineArgument("--output",outputPath);
+  parser->GetCommandLineArgument("--out",outputPath);
 
   typedef itk::ImageFileWriter<OutputImageType>  OutputWriterType;
   typename OutputWriterType::Pointer outputWriter = OutputWriterType::New();
-  outputWriter->SetInput(intensityWindower->GetOutput()); // I(1)
+  outputWriter->SetInput(clamper->GetOutput()); // I(1)
   outputWriter->SetFileName(outputPath);
   try
   {
@@ -291,53 +276,58 @@ int Metamorphosis(typename ParserType::Pointer parser)
     returnValue = EXIT_FAILURE;
   }
 
-  // Write displacement, \phi_{10}
-  typedef typename TransformType::DisplacementFieldType  DisplacementFieldType;
-  typedef itk::ImageFileWriter<DisplacementFieldType>    DisplacementWriterType;
-  string displacementPath;
-  parser->GetCommandLineArgument("--displacement",displacementPath);
+  // Write displacement field, \phi_{10}
+  typedef typename TransformType::DisplacementFieldType  FieldType;
+  typedef itk::ImageFileWriter<FieldType>    FieldWriterType;
 
-  if(displacementPath != "")
+  string fieldPath;
+  parser->GetCommandLineArgument("--",fieldPath);
+
+  if(fieldPath != "")
   {
-    typename DisplacementWriterType::Pointer displacementWriter = DisplacementWriterType::New();
-    displacementWriter->SetInput(transform->GetDisplacementField()); // \phi_{10}
-    displacementWriter->SetFileName(displacementPath);
+    transform->SetNumberOfIntegrationSteps(metamorphosis->GetNumberOfTimeSteps()+2);
+    transform->SetLowerTimeBound(1.0);
+    transform->SetUpperTimeBound(0.0);
+    transform->IntegrateVelocityField();
+
+    typename FieldWriterType::Pointer fieldWriter = FieldWriterType::New();
+    fieldWriter->SetInput(transform->GetDisplacementField()); // \phi_{10}
+    fieldWriter->SetFileName(fieldPath);
     try
     {
-      displacementWriter->Update();
+      fieldWriter->Update();
     }
     catch(itk::ExceptionObject& exceptionObject)
     {
-      cerr<<"Error: Could not write displacement field: "<<displacementPath<<endl;
+      cerr<<"Error: Could not write displacement field: "<<fieldPath<<endl;
       cerr<<exceptionObject<<endl;
       returnValue = EXIT_FAILURE;
     }
   }
 
-  // Write inverse displacement, \phi_{01}
-  string inverseDisplacementPath;
-  parser->GetCommandLineArgument("--inverseDisplacement", inverseDisplacementPath);
-  if(inverseDisplacementPath != "")
+  // Write inverse displacement field, \phi_{01}
+  string inverseFieldPath;
+  parser->GetCommandLineArgument("--invfield", inverseFieldPath);
+  if(inverseFieldPath != "")
   {
     transform->SetNumberOfIntegrationSteps(metamorphosis->GetNumberOfTimeSteps()+2);
     transform->SetLowerTimeBound(0.0);
     transform->SetUpperTimeBound(1.0);
     transform->IntegrateVelocityField();
 
-    typename DisplacementWriterType::Pointer inverseDisplacementWriter = DisplacementWriterType::New();
-    inverseDisplacementWriter->SetInput(transform->GetDisplacementField()); // \phi_{10}
-    inverseDisplacementWriter->SetFileName(inverseDisplacementPath);
+    typename FieldWriterType::Pointer inverseFieldWriter = FieldWriterType::New();
+    inverseFieldWriter->SetInput(transform->GetDisplacementField()); // \phi_{10}
+    inverseFieldWriter->SetFileName(inverseFieldPath);
     try
     {
-      inverseDisplacementWriter->Update();
+      inverseFieldWriter->Update();
     }
     catch(itk::ExceptionObject& exceptionObject)
     {
-      cerr<<"Error: Could not write inverse displacement field: "<<inverseDisplacementPath<<endl;
+      cerr<<"Error: Could not write inverse displacement field: "<<inverseFieldPath<<endl;
       cerr<<exceptionObject<<endl;
       returnValue = EXIT_FAILURE;
     }
-
   }
 
   // Write bias, B(1)
@@ -349,7 +339,7 @@ int Metamorphosis(typename ParserType::Pointer parser)
     typedef float                                       FloatPixelType;
     typedef itk::Image<FloatPixelType,ImageDimension>   FloatImageType;
 
-    typedef itk::CastImageFilter<typename MetamorphosisType::ImageType,FloatImageType>  CasterType;
+    typedef itk::CastImageFilter<typename MetamorphosisType::BiasImageType,FloatImageType>  CasterType;
     typename CasterType::Pointer caster = CasterType::New();
     caster->SetInput(metamorphosis->GetBias()); // B(1)
 
@@ -368,20 +358,21 @@ int Metamorphosis(typename ParserType::Pointer parser)
       returnValue = EXIT_FAILURE;
     }
   }
-
-  // Write grid.
-  // TODO grid writing broken.  Need to fix.
+  
+  // Write grid
   string gridPath;
-  parser->GetCommandLineArgument("--grid",gridPath);
+  parser->GetCommandLineArgument("--grid", gridPath);
 
   if(gridPath != "")
   {
+    // Generate grid
     typedef itk::BSplineKernelFunction<0>  KernelType;
     typename KernelType::Pointer kernelFunction = KernelType::New();
+    unsigned int gridStep = 5; // Space in voxels between grid lines
 
     typedef itk::GridImageSource<ImageType> GridSourceType;
     typename GridSourceType::Pointer gridSource = GridSourceType::New();
-    typename GridSourceType::ArrayType gridSpacing = fixedImage->GetSpacing()*5;
+    typename GridSourceType::ArrayType gridSpacing = fixedImage->GetSpacing()*gridStep;
     typename GridSourceType::ArrayType gridOffset; gridOffset.Fill(0.0);
     typename GridSourceType::ArrayType sigma = fixedImage->GetSpacing();
     typename GridSourceType::ArrayType which; which.Fill(true);
@@ -396,6 +387,12 @@ int Metamorphosis(typename ParserType::Pointer parser)
     gridSource->SetSigma(sigma);
     gridSource->SetScale(itk::NumericTraits<unsigned char>::max());
 
+    // Apply transform to grid
+    transform->SetNumberOfIntegrationSteps(metamorphosis->GetNumberOfTimeSteps()+2);
+    transform->SetLowerTimeBound(1.0);
+    transform->SetUpperTimeBound(0.0);
+    transform->IntegrateVelocityField();
+
     typedef itk::ResampleImageFilter<ImageType,OutputImageType,typename TransformType::ScalarType>   GridResamplerType;
     typename GridResamplerType::Pointer gridResampler = GridResamplerType::New();
     gridResampler->SetInput(gridSource->GetOutput());
@@ -403,6 +400,7 @@ int Metamorphosis(typename ParserType::Pointer parser)
     gridResampler->UseReferenceImageOn();
     gridResampler->SetReferenceImage(fixedImage);
 
+    // Write grid to file
     typename OutputWriterType::Pointer gridWriter = OutputWriterType::New();
     gridWriter->SetInput(gridResampler->GetOutput());
     gridWriter->SetFileName(gridPath);
@@ -419,7 +417,9 @@ int Metamorphosis(typename ParserType::Pointer parser)
   }
 
   return returnValue;
+
 } // end Metamorphosis
+
 
 template<typename TMetamorphosis>
 class MetamorphosisObserver: public itk::Command
@@ -450,7 +450,7 @@ public:
       {
         ss<<"\tE, E_velocity, E_rate, E_image, LearningRate"<<std::endl;
       }
-      ss<<std::setprecision(3) << std::fixed;
+      //ss<<std::setprecision(4);// << std::fixed;
       ss<<filter->GetCurrentIteration()<<".\t"<<filter->GetEnergy()<<", "<<filter->GetVelocityEnergy()<<", "<<filter->GetRateEnergy()<<", "<<filter->GetImageEnergy()<<", ";
       ss.setf(std::ios::scientific,std::ios::floatfield);
       ss<<filter->GetLearningRate()<<std::endl;

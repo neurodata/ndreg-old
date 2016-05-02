@@ -3,7 +3,7 @@
 
 from __future__ import print_function
 import SimpleITK as sitk
-import ndio.remote.OCP as ocp
+import ndio.remote.neurodata as ocp
 import sys, os, math, glob, subprocess, shutil
 import numpy as np
 from numpy import mat, array, dot, sum
@@ -127,6 +127,7 @@ def imgDownload(token, path, channel="", resolution=0, server="openconnecto.me")
     # Get size and spacing of image data
     metadata = oo.get_proj_info(token)
     size = metadata[u'dataset'][u'imagesize'][unicode(str(resolution))]
+    offset = metadata['dataset']['offset'][str(resolution)]
     spacingNm = metadata[u'dataset'][u'voxelres'][unicode(str(resolution))] # Returns spacing in nanometers
     spacing = [x * 1e-6 for x in spacingNm] # Convert spacing to mm
 
@@ -140,7 +141,8 @@ def imgDownload(token, path, channel="", resolution=0, server="openconnecto.me")
     elif not(channel in channelList):
         raise Exception("Channel '{0}' does not exist for given token.".format(channel))
 
-    array = oo.get_cutout(token, channel,0,size[0],0,size[1],0,size[2],resolution)
+
+    array = oo.get_cutout(token, channel, offset[0], size[0], offset[1], size[1], offset[2], size[2],resolution)
     img = sitk.GetImageFromArray(array) # convert numpy array to sitk image
     img.SetSpacing(spacing)
 
