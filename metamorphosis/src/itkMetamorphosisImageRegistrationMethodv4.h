@@ -161,6 +161,8 @@ public:
   itkGetConstMacro(Gamma, double);
   itkSetMacro(MinimumLearningRate, double)
   itkGetConstMacro(MinimumLearningRate, double);
+  itkSetMacro(MinimumFractionInitialEnergy, double);
+  itkGetConstMacro(MinimumFractionInitialEnergy, double);
   itkSetMacro(NumberOfTimeSteps, unsigned int);
   itkGetConstMacro(NumberOfTimeSteps, unsigned int);
   itkSetMacro(NumberOfIterations, unsigned int);
@@ -206,6 +208,7 @@ private:
   double m_Mu;
   double m_Gamma;
   double m_MinimumLearningRate;
+  double m_MinimumFractionInitialEnergy;
   unsigned int m_NumberOfTimeSteps;
   unsigned int m_NumberOfIterations;
   bool m_UseJacobian;

@@ -15,8 +15,9 @@ MetamorphosisImageRegistrationMethodv4()
   m_Mu = 10;                          // 10
   m_Sigma = 1;                        // 1
   m_Gamma = 1;                        // 1
-  this->SetLearningRate(1e-4);        // 1e-4
-  this->SetMinimumLearningRate(1e-10); // 1e-8
+  this->SetLearningRate(1e-6);        // 1e-4
+  this->SetMinimumLearningRate(1e-12); // 1e-8
+  m_MinimumFractionInitialEnergy = 0;  
   m_NumberOfTimeSteps = 4;            // 4 
   m_NumberOfIterations = 20;          // 20
   m_UseJacobian = true;
@@ -589,7 +590,7 @@ UpdateControls()
   TimeVaryingFieldPointer velocityOld = this->m_OutputTransform->GetVelocityField();
   TimeVaryingImagePointer rateOld = m_Rate;
 
-  while(this->GetLearningRate() > m_MinimumLearningRate)
+  while(this->GetLearningRate() > m_MinimumLearningRate && energyOld/m_InitialEnergy > m_MinimumFractionInitialEnergy)
   {
     // Update velocity, v = v - \epsilon \nabla_V E
     typedef MultiplyImageFilter<TimeVaryingFieldType,TimeVaryingImageType>  TimeVaryingFieldMultiplierType;

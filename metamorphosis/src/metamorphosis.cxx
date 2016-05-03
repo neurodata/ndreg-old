@@ -32,6 +32,7 @@ int main(int argc, char* argv[])
     cerr<<"Usage:"<<endl;
     cerr<<"\t"<<argv[0]<<" --in InputPath --ref ReferencePath --out OutputPath"<<endl;
     cerr<<"\t\t[ --field OutputDisplacementFieldPath"<<endl;
+    cerr<<"\t\t  --invfield OutputInverseDisplacementFieldPath"<<endl;
     cerr<<"\t\t  --bias OutputBiasPath"<<endl;
     cerr<<"\t\t  --grid OutputGridPath"<<endl;
     cerr<<"\t\t  --scale Scale"<<endl;
@@ -39,6 +40,8 @@ int main(int argc, char* argv[])
     cerr<<"\t\t  --beta BiasSmoothness"<<endl;
     cerr<<"\t\t  --sigma Sigma"<<endl;
     cerr<<"\t\t  --mu Mu"<<endl;
+    cerr<<"\t\t  --epsilon LearningRate"<<endl;
+    cerr<<"\t\t  --fraction MinimumInitialEnergyFraction"<<endl;
     cerr<<"\t\t  --steps NumberOfTimesteps"<<endl;
     cerr<<"\t\t  --iterations MaximumNumberOfIterations"<<endl;
     cerr<<"\t\t  --verbose ]"<<endl;
@@ -177,6 +180,21 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     metamorphosis->SetMu(mu);
   }
 
+  if(parser->ArgumentExists("--epsilon"))
+  {
+    double learningRate;
+    parser->GetCommandLineArgument("--epsilon", learningRate);
+    metamorphosis->SetLearningRate(learningRate);
+    //metamorphosis->SetMinimumLearningRate(learningRate/1000);
+  }
+
+  if(parser->ArgumentExists("--fraction"))
+  {
+    double minimumFractionInitialEnergy;
+    parser->GetCommandLineArgument("--fraction",minimumFractionInitialEnergy);
+    metamorphosis->SetMinimumFractionInitialEnergy(minimumFractionInitialEnergy);
+  }
+
   if(parser->ArgumentExists("--steps"))
   {
     unsigned int numberOfTimeSteps;
@@ -214,7 +232,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   }
   clock.Stop();
 
-  cout<<"E = "<<metamorphosis->GetEnergy()<<" ("<<metamorphosis->GetEnergy()/metamorphosis->GetInitialEnergy()*100<<"%)"<<endl;
+  cout<<"E = "<<metamorphosis->GetEnergy()<<" ("<<metamorphosis->GetImageEnergy()/metamorphosis->GetInitialEnergy()*100<<"%)"<<endl;
   cout<<"Time = "<<clock.GetTotal()<<"s"<<" ("<<clock.GetTotal()/60<<"m)"<<endl;
  
   // Write output images 
@@ -281,7 +299,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   typedef itk::ImageFileWriter<FieldType>    FieldWriterType;
 
   string fieldPath;
-  parser->GetCommandLineArgument("--",fieldPath);
+  parser->GetCommandLineArgument("--field",fieldPath);
 
   if(fieldPath != "")
   {
@@ -451,7 +469,10 @@ public:
         ss<<"\tE, E_velocity, E_rate, E_image, LearningRate"<<std::endl;
       }
       //ss<<std::setprecision(4);// << std::fixed;
-      ss<<filter->GetCurrentIteration()<<".\t"<<filter->GetEnergy()<<", "<<filter->GetVelocityEnergy()<<", "<<filter->GetRateEnergy()<<", "<<filter->GetImageEnergy()<<", ";
+      double imageEnergy = filter->GetImageEnergy();
+      double imageEnergyPercent = imageEnergy/filter->GetInitialEnergy()*100;
+      
+      ss<<filter->GetCurrentIteration()<<".\t"<<filter->GetEnergy()<<", "<<filter->GetVelocityEnergy()<<", "<<filter->GetRateEnergy()<<", "<<imageEnergy<<" ("<<imageEnergyPercent<<"%), ";
       ss.setf(std::ios::scientific,std::ios::floatfield);
       ss<<filter->GetLearningRate()<<std::endl;
       std::cout<<ss.str();
