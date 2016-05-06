@@ -10,13 +10,15 @@ from numpy import mat, array, dot, sum
 from time import time
 from itertools import product
 from landmarks import *
+
 scriptDirPath = os.path.dirname(os.path.realpath(__file__))+"/"
 
-dimension = 3
+dimension = 2
 vectorComponentType = sitk.sitkFloat32
 vectorType = sitk.sitkVectorFloat32
-identityAffine = [1,0,0,0,1,0,0,0,1,0,0,0]
-identityDirection = [1,0,0,0,1,0,0,0,1]
+affine = sitk.AffineTransform(dimension)
+identityAffine = list(affine.GetParameters())
+identityDirection = list(affine.GetMatrix())
 zeroOrigin = [0]*dimension
 zeroIndex = [0]*dimension
 ndreg=True
@@ -37,6 +39,7 @@ def run(command, checkReturnValue=True, quiet=True):
     process.communicate()[0]
     returnValue = process.returncode
     if checkReturnValue and (returnValue != 0): raise Exception(outText)
+
     return (returnValue, outText)
 
 """
@@ -156,7 +159,19 @@ def imgRead(path):
     """
     Alias for sitk.ReadImage
     """
-    return sitk.ReadImage(path)
+    inImg = sitk.ReadImage(path)
+
+    # Collaspse single slice 3D images into 2D images
+    size = list(inImg.GetSize())
+    if 1 in size:
+        size[size.index(1)] = 0
+        extractor = sitk.ExtractImageFilter()
+        extractor.SetSize(size)
+        extractor.SetDirectionCollapseToStrategy(1)
+        inImg = extractor.Execute(inImg)
+    
+    return inImg
+    
 
 def imgSize(path):
     """
@@ -201,6 +216,8 @@ def mapReformat(inPath, outPath):
             size = map(int,line.split(" ")[1:dimension+1])
             break
     inFile.close()
+
+    if dimension == 2: size += [0]
 
     outFile = open(outPath,"wb")
     for (i,line) in enumerate(lineList):
@@ -516,7 +533,8 @@ def fieldApplyField(inPath, fieldPath, outPath):
 
     return outPath
 
-def imgApplyField(inPath, fieldPath, outPath, useNearestNeighborInterpolation=False, size=[], spacing=[]):
+
+def imgApplyField(inPath, fieldPath, outPath, useNearestNeighborInterpolation=False, size=[], spacing=[],defaultValue=0):
     """
     img \circ field
     """
@@ -547,8 +565,8 @@ def imgApplyField(inPath, fieldPath, outPath, useNearestNeighborInterpolation=Fa
         if len(spacing) != dimension: raise Exception("spacing must have length {0}.".format(dimension))
     
     # Apply displacement transform
-    outImg = sitk.Resample(inImg, size, transform, interpolator, zeroOrigin, spacing)
-
+    outImg = sitk.Resample(inImg, size, transform, interpolator, zeroOrigin, spacing, inImg.GetDirection() ,defaultValue)
+    #resampler = sitk.ResampleImageFilter()
     # Write output image
     (outPath, outDirPath) = getOutPaths(inPath, outPath)    
     imgWrite(outImg, outPath)
@@ -578,6 +596,25 @@ def affineToField(affine, size, spacing, outPath):
 
     return outPath
 
+def imgWriteGrid(inPath, outPath, step=5):
+    """
+    Creates grid with size, spacing, origin and direction of input image spaced by step voxels.
+    """
+    inImg = imgRead(inPath)
+
+    size = list(inImg.GetSize())
+    size.reverse()
+        
+    outArray = 255*np.ones(size,np.uint8)
+    outArray[::step,:] = 0
+    outArray[:,::step] = 0
+    outImg = sitk.GetImageFromArray(outArray)
+    outImg.CopyInformation(inImg)
+    
+    (outPath, outDirPath) = getOutPaths("", outPath)
+    imgWrite(outImg, outPath)
+    return outPath
+    
 def fieldToMap(inPath, outPath):
     """
     Convert input displacement field into CIS compatable map
@@ -614,7 +651,7 @@ def mapToField(inPath, outPath, inSpacing=[]):
     if inSpacing == []:
         inSpacing = inMap.GetSpacing()
     else:
-        if (not isIterable(inSpacing)) or (len(inSpacing) != 3): raise Exception("inSspacing must be a list of length 3.")
+        if (not isIterable(inSpacing)) or (len(inSpacing) != dimension): raise Exception("inSspacing must be a list of length "+str(dimension) + ".")
         inMap.SetSpacing(inSpacing)
 
     idMap = mapCreateIdentity(inSize)
@@ -641,6 +678,9 @@ def mapCreateIdentity(size):
     """
     spacing = [1,1,1]
     return sitk.PhysicalPointImageSource().Execute(vectorType, size, zeroOrigin, spacing, identityDirection)
+
+
+    
 
 
 def affineInverse(affine):
