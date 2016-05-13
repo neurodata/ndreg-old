@@ -16,7 +16,7 @@ MetamorphosisImageRegistrationMethodv4()
   m_Sigma = 1;                        // 1
   m_Gamma = 1;                        // 1
   this->SetLearningRate(1e-6);        // 1e-4
-  this->SetMinimumLearningRate(1e-12); // 1e-8
+  this->SetMinimumLearningRate(1e-12);// 1e-8
   m_MinimumFractionInitialEnergy = 0;  
   m_NumberOfTimeSteps = 4;            // 4 
   m_NumberOfIterations = 20;          // 20
@@ -129,7 +129,7 @@ InitializeKernels(TimeVaryingImagePointer kernel, TimeVaryingImagePointer invers
     unsigned int i;
     for(i = 0, A = gamma; i < ImageDimension; i++)
     {
-      A += 2 * alpha * vcl_pow(size[i],2)     * ( 1.0-cos(2*vnl_math::pi*k[i]/size[i]) );
+      A += 2 * alpha * vcl_pow(size[i],2) * ( 1.0-cos(2*vnl_math::pi*k[i]/size[i]) );
       //A += 2 * alpha * vcl_pow(spacing[i],-2) * ( 1.0 - cos(2*vnl_math::pi*k[i]*spacing[i]) );
       //A += alpha * vcl_pow(2*vnl_math::pi*k[i]*spacing[i],2);
     }
@@ -157,9 +157,8 @@ Initialize()
   for(unsigned int i = 0; i < ImageDimension; i++)
   {
     virtualSpacing[i] = fixedImage->GetSpacing()[i] / m_Scale;
-    virtualSize[i] = fixedImage->GetLargestPossibleRegion().GetSize(i) * m_Scale;
+    virtualSize[i] = vcl_floor(fixedImage->GetLargestPossibleRegion().GetSize(i) * m_Scale) + 1;
   }
-
   // Adjust virtual size to maximize speed in FFT calculations
   /*
   This filter uses FFT to smooth velocity fields.
@@ -344,7 +343,7 @@ GetImageEnergy()
   typename CasterType::Pointer caster = CasterType::New();
   caster->SetInput(m_ForwardImage);                            // I(1)
   caster->Update();
-
+  
   ImageMetricPointer metric = dynamic_cast<ImageMetricType *>(this->m_Metric.GetPointer()); 
   metric->SetFixedImage(this->GetFixedImage());                // I_1
   metric->SetMovingImage(caster->GetOutput());                 // I(1)
@@ -411,12 +410,14 @@ IntegrateRate()
     this->m_OutputTransform->SetUpperTimeBound((j-1) * m_TimeStep); // t_{j-1}
     this->m_OutputTransform->IntegrateVelocityField();
 
+    typedef WrapExtrapolateImageFunction<VirtualImageType, RealType>         ExtrapolatorType;
     typedef ResampleImageFilter<VirtualImageType,VirtualImageType,RealType>  ResamplerType;
     typename ResamplerType::Pointer  resampler = ResamplerType::New();
     resampler->SetInput(adder->GetOutput());                    // r(j-1) \Delta t + B(j-1)
     resampler->SetTransform(this->m_OutputTransform);           // \phi_{j,j-1}
     resampler->UseReferenceImageOn();
     resampler->SetReferenceImage(m_VirtualImage);
+    resampler->SetExtrapolator(ExtrapolatorType::New());
     resampler->Update();
 
     m_Bias = resampler->GetOutput();
@@ -562,7 +563,6 @@ UpdateControls()
   adder0->SetInput1(this->m_OutputTransform->GetVelocityField());                 // v
   adder0->SetInput2(ApplyKernel(m_VelocityKernel,velocityJoiner->GetOutput()));   // K_V[p \nabla I]
   adder0->Update();
-
   TimeVaryingFieldPointer velocityEnergyGradient = adder0->GetOutput();                                   // \nabla_V E = v + K_V[p \nabla I]
 
   // Compute rate energy gradient \nabla_r E = r - \mu^2 K_R[p]
@@ -611,20 +611,23 @@ UpdateControls()
     this->m_OutputTransform->SetUpperTimeBound(0.0);
     this->m_OutputTransform->IntegrateVelocityField();
 
+
     typedef DisplacementFieldTransform<RealType,ImageDimension> DisplacementFieldTransformType;
-    typename DisplacementFieldTransformType::Pointer forwardTransform = DisplacementFieldTransformType::New();
-    forwardTransform->SetDisplacementField(this->m_OutputTransform->GetDisplacementField()); // \phi_{t1}
+    typename DisplacementFieldTransformType::Pointer transform = DisplacementFieldTransformType::New();
+    transform->SetDisplacementField(this->m_OutputTransform->GetDisplacementField()); // \phi_{t1}
 
     // Compute forward image I(1) = I_0 o \phi_{10} + B(1)
+    typedef WrapExtrapolateImageFunction<MovingImageType, RealType>         ExtrapolatorType;
     typedef ResampleImageFilter<MovingImageType,VirtualImageType,RealType>  MovingResamplerType;
-    typename MovingResamplerType::Pointer forwardResampler = MovingResamplerType::New();
-    forwardResampler->SetInput(this->GetMovingImage());   // I_0
-    forwardResampler->SetTransform(forwardTransform);     // \phi_{t0}
-    forwardResampler->UseReferenceImageOn();
-    forwardResampler->SetReferenceImage(this->GetFixedImage());
-    forwardResampler->Update();
+    typename MovingResamplerType::Pointer resampler = MovingResamplerType::New();
+    resampler->SetInput(this->GetMovingImage());   // I_0
+    resampler->SetTransform(transform);     // \phi_{t0}
+    resampler->UseReferenceImageOn();
+    resampler->SetReferenceImage(this->GetFixedImage());
+    resampler->SetExtrapolator(ExtrapolatorType::New());
+    resampler->Update();
 
-    m_ForwardImage = forwardResampler->GetOutput();       // I_0 o \phi_{10}
+    m_ForwardImage = resampler->GetOutput();       // I_0 o \phi_{10}
 
     if(m_UseBias)
     {
@@ -651,7 +654,7 @@ UpdateControls()
     }
 
     m_RecalculateEnergy = true;
-
+    
     if(GetEnergy() > energyOld)  // If energy increased...
     {
       // ...restore the controls to their previous values and decrease learning rate
@@ -694,17 +697,27 @@ GenerateData()
   Initialize();
   StartOptimization();
 
-  // Integrate rate to get final bias, B(1)
-  IntegrateRate(); 
+  // Integrate rate to get final bias, B(1)  
+  if(m_UseBias) { IntegrateRate(); }
 
+  /*
+  // Pad spatial dimension of velocity
+  typedef WrapPadImageFilter<TimeVaryingFieldType, TimeVaryingFieldType> PadderType;
+  typename PadderType::SizeType upperBound; upperBound.Fill(1); upperBound[ImageDimension] = 0;
+  typename PadderType::Pointer padder = PadderType::New();
+  padder->SetInput(this->m_OutputTransform->GetVelocityField());
+  padder->SetPadUpperBound(upperBound);
+  padder->Update();
+  */
   // Integrate velocity to get final displacement, \phi_10
-  this->m_OutputTransform->SetNumberOfIntegrationSteps(m_NumberOfTimeSteps + 2);
+  //this->m_OutputTransform->SetVelocityField(padder->GetOutput());
+  this->m_OutputTransform->SetNumberOfIntegrationSteps(m_NumberOfTimeSteps);
   this->m_OutputTransform->SetLowerTimeBound(1.0);
   this->m_OutputTransform->SetUpperTimeBound(0.0);
   this->m_OutputTransform->IntegrateVelocityField();
   this->GetTransformOutput()->Set(this->m_OutputTransform);
-
   this->InvokeEvent(EndEvent());
+
 }
 
 template<typename TFixedImage, typename TMovingImage>

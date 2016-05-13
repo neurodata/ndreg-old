@@ -2,7 +2,7 @@
 #define __itkDebug_h
 #include "itkImageFileWriter.h"
 #include "itkImageFileReader.h"
-
+#include "itkTimeProbe.h"
 
 template<typename TImage>
 void printImage(typename TImage::Pointer image)

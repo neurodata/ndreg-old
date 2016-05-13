@@ -13,6 +13,7 @@
 #include "itkClampImageFilter.h"
 #include "itkBSplineKernelFunction.h"
 #include "itkGridImageSource.h"
+#include "itkWrapExtrapolateImageFunction.h"
 #include "itkMetamorphosisImageRegistrationMethodv4.h"
 
 using namespace std;
@@ -241,7 +242,6 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   // Compute I_0 o \phi_{10}
   typedef typename MetamorphosisType::OutputTransformType TransformType;
   typename TransformType::Pointer transform = const_cast<TransformType*>(metamorphosis->GetOutput()->Get()); // \phi_{10}
-  transform->SetNumberOfIntegrationSteps(metamorphosis->GetNumberOfTimeSteps()+2);
   transform->SetLowerTimeBound(1.0);
   transform->SetUpperTimeBound(0.0);
   transform->IntegrateVelocityField();
@@ -252,10 +252,8 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   outputResampler->SetTransform(transform); // \phi_{10}
   outputResampler->UseReferenceImageOn();
   outputResampler->SetReferenceImage(fixedImage);
-
-
   outputResampler->Update();
-  writeImage<ImageType>(outputResampler->GetOutput(),"test.tif");
+
 
   // Compute I(1) = I_0 o \phi_{10} + B(1)
   typedef itk::AddImageFilter<ImageType,typename MetamorphosisType::BiasImageType,ImageType>  AdderType;
@@ -303,7 +301,6 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
 
   if(fieldPath != "")
   {
-    transform->SetNumberOfIntegrationSteps(metamorphosis->GetNumberOfTimeSteps()+2);
     transform->SetLowerTimeBound(1.0);
     transform->SetUpperTimeBound(0.0);
     transform->IntegrateVelocityField();
@@ -328,13 +325,12 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   parser->GetCommandLineArgument("--invfield", inverseFieldPath);
   if(inverseFieldPath != "")
   {
-    transform->SetNumberOfIntegrationSteps(metamorphosis->GetNumberOfTimeSteps()+2);
     transform->SetLowerTimeBound(0.0);
     transform->SetUpperTimeBound(1.0);
     transform->IntegrateVelocityField();
 
     typename FieldWriterType::Pointer inverseFieldWriter = FieldWriterType::New();
-    inverseFieldWriter->SetInput(transform->GetDisplacementField()); // \phi_{10}
+    inverseFieldWriter->SetInput(transform->GetDisplacementField()); // \phi_{01}
     inverseFieldWriter->SetFileName(inverseFieldPath);
     try
     {
@@ -386,7 +382,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     // Generate grid
     typedef itk::BSplineKernelFunction<0>  KernelType;
     typename KernelType::Pointer kernelFunction = KernelType::New();
-    unsigned int gridStep = 5; // Space in voxels between grid lines
+    unsigned int gridStep = 10; // Space in voxels between grid lines
 
     typedef itk::GridImageSource<ImageType> GridSourceType;
     typename GridSourceType::Pointer gridSource = GridSourceType::New();
@@ -406,17 +402,20 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     gridSource->SetScale(itk::NumericTraits<unsigned char>::max());
 
     // Apply transform to grid
-    transform->SetNumberOfIntegrationSteps(metamorphosis->GetNumberOfTimeSteps()+2);
     transform->SetLowerTimeBound(1.0);
     transform->SetUpperTimeBound(0.0);
     transform->IntegrateVelocityField();
 
+    typedef itk::WrapExtrapolateImageFunction<ImageType, double> ExtrapolatorType;
+    typename ExtrapolatorType::Pointer extrapolator = ExtrapolatorType::New();    
+
     typedef itk::ResampleImageFilter<ImageType,OutputImageType,typename TransformType::ScalarType>   GridResamplerType;
     typename GridResamplerType::Pointer gridResampler = GridResamplerType::New();
     gridResampler->SetInput(gridSource->GetOutput());
-    gridResampler->SetTransform(transform);
+    gridResampler->SetTransform(transform); // phi_{10}
     gridResampler->UseReferenceImageOn();
     gridResampler->SetReferenceImage(fixedImage);
+    gridResampler->SetExtrapolator(extrapolator);
 
     // Write grid to file
     typename OutputWriterType::Pointer gridWriter = OutputWriterType::New();

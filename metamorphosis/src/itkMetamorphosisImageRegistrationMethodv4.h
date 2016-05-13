@@ -7,7 +7,7 @@
 #include "itkTimeVaryingVelocityFieldImageRegistrationMethodv4.h"
 #include "itkMeanSquaresImageToImageMetricv4.h"
 #include "itkImportImageFilter.h"
-#include "itkTimeVaryingVelocityFieldTransform.h"
+#include "itkTimeVaryingVelocityFieldSemiLagrangianTransform.h"
 #include "itkVectorIndexSelectionCastImageFilter.h"
 #include "itkVectorMagnitudeImageFilter.h"
 #include "itkGradientImageFilter.h"
@@ -17,6 +17,8 @@
 #include "itkMultiplyImageFilter.h"
 #include "itkJoinSeriesImageFilter.h"
 #include "itkExtractImageFilter.h"
+#include "itkWrapExtrapolateImageFunction.h"
+#include "itkWrapPadImageFilter.h"
 
 namespace itk
 {
@@ -81,12 +83,12 @@ private:
 template<  typename TFixedImage,
            typename TMovingImage = TFixedImage >
 class MetamorphosisImageRegistrationMethodv4:
-public TimeVaryingVelocityFieldImageRegistrationMethodv4<TFixedImage, TMovingImage, TimeVaryingVelocityFieldTransform<double, TFixedImage::ImageDimension> >
+public TimeVaryingVelocityFieldImageRegistrationMethodv4<TFixedImage, TMovingImage, TimeVaryingVelocityFieldSemiLagrangianTransform<double, TFixedImage::ImageDimension> >
 {
 public:
   /** Standard class typedefs. */
   typedef MetamorphosisImageRegistrationMethodv4                  Self;
-  typedef TimeVaryingVelocityFieldImageRegistrationMethodv4<TFixedImage, TMovingImage, TimeVaryingVelocityFieldTransform<double, TFixedImage::ImageDimension> > Superclass;
+  typedef TimeVaryingVelocityFieldImageRegistrationMethodv4<TFixedImage, TMovingImage, TimeVaryingVelocityFieldSemiLagrangianTransform<double, TFixedImage::ImageDimension> > Superclass;
   typedef SmartPointer<Self>                                      Pointer;
   typedef SmartPointer<const Self>                                ConstPointer;
 
