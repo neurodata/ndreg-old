@@ -14,7 +14,12 @@
 #include "itkBSplineKernelFunction.h"
 #include "itkGridImageSource.h"
 #include "itkWrapExtrapolateImageFunction.h"
+#include "itkDisplacementFieldTransform.h"
+#include "itkMattesMutualInformationImageToImageMetricv4.h"
+#include "itkMeanSquaresImageToImageMetricv4.h"
+#include "itkCheckerBoardImageFilter.h"
 #include "itkMetamorphosisImageRegistrationMethodv4.h"
+
 
 using namespace std;
 
@@ -36,17 +41,21 @@ int main(int argc, char* argv[])
     cerr<<"\t\t  --invfield OutputInverseDisplacementFieldPath"<<endl;
     cerr<<"\t\t  --bias OutputBiasPath"<<endl;
     cerr<<"\t\t  --grid OutputGridPath"<<endl;
+    cerr<<"\t\t  --checker OutputCheckerBoardPath"<<endl;
     cerr<<"\t\t  --scale Scale"<<endl;
     cerr<<"\t\t  --alpha RegistrationSmoothness"<<endl;
     cerr<<"\t\t  --beta BiasSmoothness"<<endl;
+    cerr<<"\t\t\t -1 = Disable bias correction"<<endl;
     cerr<<"\t\t  --sigma Sigma"<<endl;
     cerr<<"\t\t  --mu Mu"<<endl;
     cerr<<"\t\t  --epsilon LearningRate"<<endl;
     cerr<<"\t\t  --fraction MinimumInitialEnergyFraction"<<endl;
     cerr<<"\t\t  --steps NumberOfTimesteps"<<endl;
     cerr<<"\t\t  --iterations MaximumNumberOfIterations"<<endl;
+    cerr<<"\t\t  --cost CostFunction"<<endl;
+    cerr<<"\t\t\t 0 = Mean Square Error"<<endl;
+    cerr<<"\t\t\t 1 = Mattes Mutual Information"<<endl;
     cerr<<"\t\t  --verbose ]"<<endl;
-    cerr<<"Note: To disable bias correction use a BiasSmoothness < 0."<<endl;
     return EXIT_FAILURE;
   }
 
@@ -73,6 +82,8 @@ int main(int argc, char* argv[])
   }
 
   typename Image3DType::Pointer referenceImage = referenceReader->GetOutput();
+  Image3DType::DirectionType direction; direction.SetIdentity();
+  referenceImage->SetDirection(direction);
 
   /** Setup metamorphosis */
   if(referenceImage->GetLargestPossibleRegion().GetSize()[numberOfDimensions-1] <= 1) // If reference image is 2D...
@@ -128,6 +139,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   }
 
   typename ImageType::Pointer movingImage = inputReader->GetOutput();
+  movingImage->SetDirection(fixedImage->GetDirection());
 
   // Set input (moving) image
   metamorphosis->SetMovingImage(movingImage); // I_0
@@ -165,13 +177,6 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
       metamorphosis->UseBiasOn();
       metamorphosis->SetBiasSmoothness(beta);
     }
-  }
-
-  if(parser->ArgumentExists("--sigma"))
-  {
-    double sigma;
-    parser->GetCommandLineArgument("--sigma",sigma);
-    metamorphosis->SetSigma(sigma);
   }
 
   if(parser->ArgumentExists("--mu"))
@@ -218,6 +223,40 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     metamorphosis->AddObserver(itk::IterationEvent(),observer);
   }
 
+  if(parser->ArgumentExists("--cost"))
+  {
+    unsigned int costFunction;
+    parser->GetCommandLineArgument("--cost", costFunction);
+    
+    switch(costFunction)
+    {
+      case 1:
+      {
+        typedef itk::MattesMutualInformationImageToImageMetricv4<ImageType, ImageType> MetricType;
+        typename MetricType::Pointer metric = MetricType::New();
+        metric->SetNumberOfHistogramBins(32);
+        metamorphosis->SetMetric(metric);
+        metamorphosis->SetSigma(0.001);
+        break;
+      }
+      default:
+      {
+        print(costFunction);
+        typedef itk::MeanSquaresImageToImageMetricv4<ImageType, ImageType> MetricType;
+        typename MetricType::Pointer metric = MetricType::New();
+        metamorphosis->SetMetric(metric);
+        metamorphosis->SetSigma(1.0);
+      }
+    }
+  }
+
+  if(parser->ArgumentExists("--sigma"))
+  {
+    double sigma;
+    parser->GetCommandLineArgument("--sigma",sigma);
+    metamorphosis->SetSigma(sigma);
+  }
+
   // Run metamorphosis 
   itk::TimeProbe clock;
   clock.Start();
@@ -242,11 +281,13 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   // Compute I_0 o \phi_{10}
   typedef typename MetamorphosisType::OutputTransformType TransformType;
   typename TransformType::Pointer transform = const_cast<TransformType*>(metamorphosis->GetOutput()->Get()); // \phi_{10}
+  transform->SetNumberOfIntegrationSteps(metamorphosis->GetNumberOfTimeSteps());
   transform->SetLowerTimeBound(1.0);
   transform->SetUpperTimeBound(0.0);
   transform->IntegrateVelocityField();
 
-  typedef itk::ResampleImageFilter<ImageType,ImageType,typename TransformType::ScalarType>   OutputResamplerType;
+  typedef typename TransformType::ScalarType ScalarType;
+  typedef itk::ResampleImageFilter<ImageType, ImageType, ScalarType>   OutputResamplerType;
   typename OutputResamplerType::Pointer outputResampler = OutputResamplerType::New();
   outputResampler->SetInput(movingImage);   // I_0
   outputResampler->SetTransform(transform); // \phi_{10}
@@ -254,7 +295,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   outputResampler->SetReferenceImage(fixedImage);
   outputResampler->Update();
 
-
+ 
   // Compute I(1) = I_0 o \phi_{10} + B(1)
   typedef itk::AddImageFilter<ImageType,typename MetamorphosisType::BiasImageType,ImageType>  AdderType;
   typename AdderType::Pointer adder = AdderType::New();
@@ -273,13 +314,15 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   clamper->SetBounds(itk::NumericTraits<OutputPixelType>::min(), itk::NumericTraits<OutputPixelType>::max());
   clamper->Update();
 
+  typename OutputImageType::Pointer outputImage = clamper->GetOutput();
+  
   // Write output image, I(1)
   string outputPath;
   parser->GetCommandLineArgument("--out",outputPath);
 
   typedef itk::ImageFileWriter<OutputImageType>  OutputWriterType;
   typename OutputWriterType::Pointer outputWriter = OutputWriterType::New();
-  outputWriter->SetInput(clamper->GetOutput()); // I(1)
+  outputWriter->SetInput(outputImage); // I(1)
   outputWriter->SetFileName(outputPath);
   try
   {
@@ -292,6 +335,36 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     returnValue = EXIT_FAILURE;
   }
 
+  // Write checker board of input and output image
+  string checkerPath;
+  parser->GetCommandLineArgument("--checker", checkerPath);
+  if(checkerPath != "")
+  {
+    typedef itk::CastImageFilter<ImageType, OutputImageType> OutputCasterType;
+    typename OutputCasterType::Pointer fixedCaster = OutputCasterType::New();
+    fixedCaster->SetInput(fixedImage);
+
+    typedef itk::CheckerBoardImageFilter<OutputImageType> CheckerFilterType;
+    typename CheckerFilterType::Pointer checker = CheckerFilterType::New();
+    checker->SetInput1(fixedCaster->GetOutput());
+    checker->SetInput2(outputImage);
+  
+    typename OutputWriterType::Pointer checkerWriter = OutputWriterType::New();
+    checkerWriter->SetInput(checker->GetOutput());
+    checkerWriter->SetFileName(checkerPath);
+
+    try
+    {
+      checkerWriter->Update();
+    }
+    catch(itk::ExceptionObject& exceptionObject)
+    {
+      cerr<<"Error: Could not write CheckerBoard image: "<<checkerPath<<endl;
+      cerr<<exceptionObject<<endl;
+      returnValue = EXIT_FAILURE;
+    }
+  }
+
   // Write displacement field, \phi_{10}
   typedef typename TransformType::DisplacementFieldType  FieldType;
   typedef itk::ImageFileWriter<FieldType>    FieldWriterType;
@@ -301,10 +374,6 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
 
   if(fieldPath != "")
   {
-    transform->SetLowerTimeBound(1.0);
-    transform->SetUpperTimeBound(0.0);
-    transform->IntegrateVelocityField();
-
     typename FieldWriterType::Pointer fieldWriter = FieldWriterType::New();
     fieldWriter->SetInput(transform->GetDisplacementField()); // \phi_{10}
     fieldWriter->SetFileName(fieldPath);
@@ -325,12 +394,8 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   parser->GetCommandLineArgument("--invfield", inverseFieldPath);
   if(inverseFieldPath != "")
   {
-    transform->SetLowerTimeBound(0.0);
-    transform->SetUpperTimeBound(1.0);
-    transform->IntegrateVelocityField();
-
     typename FieldWriterType::Pointer inverseFieldWriter = FieldWriterType::New();
-    inverseFieldWriter->SetInput(transform->GetDisplacementField()); // \phi_{01}
+    inverseFieldWriter->SetInput(transform->GetInverseDisplacementField()); // \phi_{01}
     inverseFieldWriter->SetFileName(inverseFieldPath);
     try
     {
@@ -382,7 +447,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     // Generate grid
     typedef itk::BSplineKernelFunction<0>  KernelType;
     typename KernelType::Pointer kernelFunction = KernelType::New();
-    unsigned int gridStep = 10; // Space in voxels between grid lines
+    unsigned int gridStep = 5; // Space in voxels between grid lines
 
     typedef itk::GridImageSource<ImageType> GridSourceType;
     typename GridSourceType::Pointer gridSource = GridSourceType::New();
@@ -402,14 +467,10 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     gridSource->SetScale(itk::NumericTraits<unsigned char>::max());
 
     // Apply transform to grid
-    transform->SetLowerTimeBound(1.0);
-    transform->SetUpperTimeBound(0.0);
-    transform->IntegrateVelocityField();
-
-    typedef itk::WrapExtrapolateImageFunction<ImageType, double> ExtrapolatorType;
+    typedef itk::WrapExtrapolateImageFunction<ImageType, ScalarType> ExtrapolatorType;
     typename ExtrapolatorType::Pointer extrapolator = ExtrapolatorType::New();    
 
-    typedef itk::ResampleImageFilter<ImageType,OutputImageType,typename TransformType::ScalarType>   GridResamplerType;
+    typedef itk::ResampleImageFilter<ImageType,OutputImageType, ScalarType>   GridResamplerType;
     typename GridResamplerType::Pointer gridResampler = GridResamplerType::New();
     gridResampler->SetInput(gridSource->GetOutput());
     gridResampler->SetTransform(transform); // phi_{10}

@@ -1,13 +1,14 @@
 #ifndef __itkMetamorphosisImageRegistrationMethodv4_h
 #define __itkMetamorphosisImageRegistrationMethodv4_h
 
-#include "itkComposeImageFilter.h"
+#include "itkTimeVaryingVelocityFieldImageRegistrationMethodv4.h"
+#include "itkTimeVaryingVelocityFieldSemiLagrangianTransform.h"
 #include "itkForwardFFTImageFilter.h"
 #include "itkInverseFFTImageFilter.h"
-#include "itkTimeVaryingVelocityFieldImageRegistrationMethodv4.h"
+#include "itkFFTPadImageFilter.h"
 #include "itkMeanSquaresImageToImageMetricv4.h"
 #include "itkImportImageFilter.h"
-#include "itkTimeVaryingVelocityFieldSemiLagrangianTransform.h"
+#include "itkComposeImageFilter.h"
 #include "itkVectorIndexSelectionCastImageFilter.h"
 #include "itkVectorMagnitudeImageFilter.h"
 #include "itkGradientImageFilter.h"
@@ -18,7 +19,6 @@
 #include "itkJoinSeriesImageFilter.h"
 #include "itkExtractImageFilter.h"
 #include "itkWrapExtrapolateImageFunction.h"
-#include "itkWrapPadImageFilter.h"
 
 namespace itk
 {
@@ -215,7 +215,6 @@ private:
   unsigned int m_NumberOfIterations;
   bool m_UseJacobian;
   bool m_UseBias;
-
   double m_TimeStep;
   double m_VoxelVolume;
   double m_Energy;
