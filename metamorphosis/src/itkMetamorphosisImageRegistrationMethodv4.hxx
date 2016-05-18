@@ -18,6 +18,8 @@ MetamorphosisImageRegistrationMethodv4()
   this->SetLearningRate(1e-2);        // 1e-6
   this->SetMinLearningRate(1e-8); // 1e-12
   m_MinImageEnergyFraction = 0;  
+  m_MinImageEnergy = 0;
+  m_MaxImageEnergy = 0;
   m_NumberOfTimeSteps = 4;            // 4 
   m_NumberOfIterations = 100;         // 20
   m_UseJacobian = true;
@@ -261,7 +263,7 @@ Initialize()
   m_RecalculateEnergy = true; // v and r have been initialized
 
 
-  typedef CastImageFilter<FixedImageType, MovingImageType>  FixedCasterType;
+  typedef CastImageFilter<FixedImageType, VirtualImageType>  FixedCasterType;
   typename FixedCasterType::Pointer fixedCaster = FixedCasterType::New();
   fixedCaster->SetInput(this->GetFixedImage());
   fixedCaster->Update();
@@ -327,11 +329,16 @@ GetRateEnergy()
 template<typename TFixedImage, typename TMovingImage>
 double
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
-GetImageEnergy(MovingImagePointer movingImage)
+GetImageEnergy(VirtualImagePointer movingImage)
 {    
+  typedef CastImageFilter<VirtualImageType, MovingImageType> CasterType;
+  typename CasterType::Pointer caster = CasterType::New();
+  caster->SetInput(movingImage);                            // I(1)
+  caster->Update();
+
   ImageMetricPointer metric = dynamic_cast<ImageMetricType *>(this->m_Metric.GetPointer()); 
   metric->SetFixedImage(this->GetFixedImage());        // I_1
-  metric->SetMovingImage(movingImage);
+  metric->SetMovingImage(caster->GetOutput());
   metric->SetFixedImageGradientFilter(m_FixedImageGradientFilter);
   metric->SetMovingImageGradientFilter(m_MovingImageGradientFilter);
   metric->SetVirtualDomainFromImage(m_VirtualImage);
@@ -345,12 +352,7 @@ double
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
 GetImageEnergy()
 {  
-  typedef CastImageFilter<VirtualImageType, MovingImageType> CasterType;
-  typename CasterType::Pointer caster = CasterType::New();
-  caster->SetInput(m_ForwardImage);                            // I(1)
-  caster->Update();
-
-  return GetImageEnergy(caster->GetOutput());
+  return GetImageEnergy(m_ForwardImage); // I(1)
 }
 
 template<typename TFixedImage, typename TMovingImage>

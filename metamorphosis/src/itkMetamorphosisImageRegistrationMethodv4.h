@@ -178,7 +178,7 @@ public:
 
   double GetVelocityEnergy();
   double GetRateEnergy();
-  double GetImageEnergy(MovingImagePointer movingImage);
+  double GetImageEnergy(VirtualImagePointer movingImage);
   double GetImageEnergy();
   double GetImageEnergyFraction();
   double GetEnergy();
@@ -212,6 +212,8 @@ private:
   double m_Gamma;
   double m_MinLearningRate;
   double m_MinImageEnergyFraction;
+  double m_MaxImageEnergy;
+  double m_MinImageEnergy;
   unsigned int m_NumberOfTimeSteps;
   unsigned int m_NumberOfIterations;
   bool m_UseJacobian;
@@ -219,9 +221,6 @@ private:
   double m_TimeStep;
   double m_VoxelVolume;
   double m_Energy;
-  double m_InitialEnergy;
-  double m_MaxImageEnergy;
-  double m_MinImageEnergy;
   bool m_RecalculateEnergy;
   bool m_IsConverged;
 

@@ -20,7 +20,6 @@
 #include "itkCheckerBoardImageFilter.h"
 #include "itkMetamorphosisImageRegistrationMethodv4.h"
 
-
 using namespace std;
 
 typedef itk::CommandLineArgumentParser  ParserType;
@@ -524,7 +523,7 @@ public:
     {
       if(filter->GetCurrentIteration() % 20 == 0) // Print column headings every 20 iterations
       {
-        ss<<"\tE, E_velocity, E_rate, E_image, LearningRate"<<std::endl;
+        ss<<"\tE, E_velocity, E_rate, E_image (E_image %), LearningRate"<<std::endl;
       }
       //ss<<std::setprecision(4);// << std::fixed;
       ss<<filter->GetCurrentIteration()<<".\t"<<filter->GetEnergy()<<", "<<filter->GetVelocityEnergy()<<", "<<filter->GetRateEnergy()<<", "<<filter->GetImageEnergy()<<" ("<<filter->GetImageEnergyFraction()*100<<"%), ";
