@@ -15,9 +15,9 @@ MetamorphosisImageRegistrationMethodv4()
   m_Mu = 10;                          // 10
   m_Sigma = 1.0;                      // 1
   m_Gamma = 1.0;                      // 1
-  this->SetLearningRate(1e-6);        // 1e-6
-  this->SetMinimumLearningRate(1e-12);// 1e-12
-  m_MinimumFractionInitialEnergy = 0;  
+  this->SetLearningRate(1e-2);        // 1e-6
+  this->SetMinLearningRate(1e-8); // 1e-12
+  m_MinImageEnergyFraction = 0;  
   m_NumberOfTimeSteps = 4;            // 4 
   m_NumberOfIterations = 100;         // 20
   m_UseJacobian = true;
@@ -241,11 +241,11 @@ Initialize()
   m_Bias->FillBuffer(NumericTraits<VirtualPixelType>::Zero);
 
   // Initialize forward image I(1)
-  typedef CastImageFilter<MovingImageType, VirtualImageType> CasterType;
-  typename CasterType::Pointer caster = CasterType::New();
-  caster->SetInput(this->GetMovingImage());
-  caster->Update();
-  m_ForwardImage = caster->GetOutput();
+  typedef CastImageFilter<MovingImageType, VirtualImageType> MovingCasterType;
+  typename MovingCasterType::Pointer movingCaster = MovingCasterType::New();
+  movingCaster->SetInput(this->GetMovingImage());
+  movingCaster->Update();
+  m_ForwardImage = movingCaster->GetOutput();
 
   // Initialize velocity kernels, K_V, L_V
   InitializeKernels(m_VelocityKernel,m_InverseVelocityKernel,m_RegistrationSmoothness,m_Gamma);
@@ -259,8 +259,16 @@ Initialize()
   m_NumberOfTimeSteps = velocity->GetLargestPossibleRegion().GetSize()[ImageDimension]; // J
   m_TimeStep = 1.0/(m_NumberOfTimeSteps - 1); // \Delta t
   m_RecalculateEnergy = true; // v and r have been initialized
-  m_InitialEnergy = GetEnergy();
 
+
+  typedef CastImageFilter<FixedImageType, MovingImageType>  FixedCasterType;
+  typename FixedCasterType::Pointer fixedCaster = FixedCasterType::New();
+  fixedCaster->SetInput(this->GetFixedImage());
+  fixedCaster->Update();
+
+  m_MinImageEnergy = GetImageEnergy(fixedCaster->GetOutput());
+  m_MaxImageEnergy = GetImageEnergy();
+  
   this->InvokeEvent(InitializeEvent());
 }
 
@@ -319,22 +327,40 @@ GetRateEnergy()
 template<typename TFixedImage, typename TMovingImage>
 double
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
-GetImageEnergy()
-{  
-  typedef CastImageFilter<VirtualImageType, MovingImageType> CasterType;
-  typename CasterType::Pointer caster = CasterType::New();
-  caster->SetInput(m_ForwardImage);                            // I(1)
-  caster->Update();
-  
+GetImageEnergy(MovingImagePointer movingImage)
+{    
   ImageMetricPointer metric = dynamic_cast<ImageMetricType *>(this->m_Metric.GetPointer()); 
-  metric->SetFixedImage(this->GetFixedImage());                // I_1
-  metric->SetMovingImage(caster->GetOutput());                 // I(1)
+  metric->SetFixedImage(this->GetFixedImage());        // I_1
+  metric->SetMovingImage(movingImage);
   metric->SetFixedImageGradientFilter(m_FixedImageGradientFilter);
   metric->SetMovingImageGradientFilter(m_MovingImageGradientFilter);
   metric->SetVirtualDomainFromImage(m_VirtualImage);
   metric->Initialize();
   
   return 0.5*vcl_pow(m_Sigma,-2) * metric->GetValue() * metric->GetNumberOfValidPoints() * m_VoxelVolume;         // 0.5 \sigma^{-2} ||I(1) - I_1||
+}
+
+template<typename TFixedImage, typename TMovingImage>
+double
+MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
+GetImageEnergy()
+{  
+  typedef CastImageFilter<VirtualImageType, MovingImageType> CasterType;
+  typename CasterType::Pointer caster = CasterType::New();
+  caster->SetInput(m_ForwardImage);                            // I(1)
+  caster->Update();
+
+  return GetImageEnergy(caster->GetOutput());
+}
+
+template<typename TFixedImage, typename TMovingImage>
+double
+MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
+GetImageEnergyFraction()
+{
+  double imageEnergyFraction = (GetImageEnergy() - m_MinImageEnergy) / (m_MaxImageEnergy - m_MinImageEnergy);
+  if(isnan(imageEnergyFraction)){ return 0; }
+  return imageEnergyFraction;
 }
 
 
@@ -571,8 +597,7 @@ UpdateControls()
   TimeVaryingFieldPointer velocityOld = this->m_OutputTransform->GetVelocityField();
   TimeVaryingImagePointer rateOld = m_Rate;
 
-  //while(this->GetLearningRate() > m_MinimumLearningRate &&  energyOld/m_InitialEnergy > m_MinimumFractionInitialEnergy)
-  while(this->GetLearningRate() > m_MinimumLearningRate)
+  while(this->GetLearningRate() > m_MinLearningRate && GetImageEnergyFraction() > m_MinImageEnergyFraction)
   {
     // Update velocity, v = v - \epsilon \nabla_V E
     typedef MultiplyImageFilter<TimeVaryingFieldType,TimeVaryingImageType>  TimeVaryingFieldMultiplierType;
@@ -676,8 +701,7 @@ MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
 GenerateData()
 {
   Initialize();
-
-  if(vcl_abs(m_InitialEnergy) > 0){ StartOptimization(); }
+  StartOptimization();
 
   // Integrate rate to get final bias, B(1)  
   if(m_UseBias) { IntegrateRate(); }

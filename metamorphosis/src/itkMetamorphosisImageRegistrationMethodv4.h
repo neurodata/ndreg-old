@@ -161,10 +161,10 @@ public:
   itkGetConstMacro(Mu, double);
   itkSetMacro(Gamma, double);
   itkGetConstMacro(Gamma, double);
-  itkSetMacro(MinimumLearningRate, double)
-  itkGetConstMacro(MinimumLearningRate, double);
-  itkSetMacro(MinimumFractionInitialEnergy, double);
-  itkGetConstMacro(MinimumFractionInitialEnergy, double);
+  itkSetMacro(MinLearningRate, double)
+  itkGetConstMacro(MinLearningRate, double);
+  itkSetMacro(MinImageEnergyFraction, double);
+  itkGetConstMacro(MinImageEnergyFraction, double);
   itkSetMacro(NumberOfTimeSteps, unsigned int);
   itkGetConstMacro(NumberOfTimeSteps, unsigned int);
   itkSetMacro(NumberOfIterations, unsigned int);
@@ -175,11 +175,12 @@ public:
   itkBooleanMacro(UseBias);
   itkSetMacro(UseBias, bool);
   itkGetConstMacro(UseBias, bool);
-  itkGetConstMacro(InitialEnergy, double);
 
   double GetVelocityEnergy();
   double GetRateEnergy();
+  double GetImageEnergy(MovingImagePointer movingImage);
   double GetImageEnergy();
+  double GetImageEnergyFraction();
   double GetEnergy();
   BiasImagePointer GetBias();
 
@@ -209,8 +210,8 @@ private:
   double m_Sigma;
   double m_Mu;
   double m_Gamma;
-  double m_MinimumLearningRate;
-  double m_MinimumFractionInitialEnergy;
+  double m_MinLearningRate;
+  double m_MinImageEnergyFraction;
   unsigned int m_NumberOfTimeSteps;
   unsigned int m_NumberOfIterations;
   bool m_UseJacobian;
@@ -219,6 +220,8 @@ private:
   double m_VoxelVolume;
   double m_Energy;
   double m_InitialEnergy;
+  double m_MaxImageEnergy;
+  double m_MinImageEnergy;
   bool m_RecalculateEnergy;
   bool m_IsConverged;
 

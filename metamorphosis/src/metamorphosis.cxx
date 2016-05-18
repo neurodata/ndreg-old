@@ -191,14 +191,13 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     double learningRate;
     parser->GetCommandLineArgument("--epsilon", learningRate);
     metamorphosis->SetLearningRate(learningRate);
-    //metamorphosis->SetMinimumLearningRate(learningRate/1000);
   }
 
   if(parser->ArgumentExists("--fraction"))
   {
-    double minimumFractionInitialEnergy;
-    parser->GetCommandLineArgument("--fraction",minimumFractionInitialEnergy);
-    metamorphosis->SetMinimumFractionInitialEnergy(minimumFractionInitialEnergy);
+    double minImageEnergyFraction;
+    parser->GetCommandLineArgument("--fraction",minImageEnergyFraction);
+    metamorphosis->SetMinImageEnergyFraction(minImageEnergyFraction);
   }
 
   if(parser->ArgumentExists("--steps"))
@@ -241,7 +240,6 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
       }
       default:
       {
-        print(costFunction);
         typedef itk::MeanSquaresImageToImageMetricv4<ImageType, ImageType> MetricType;
         typename MetricType::Pointer metric = MetricType::New();
         metamorphosis->SetMetric(metric);
@@ -272,7 +270,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   }
   clock.Stop();
 
-  cout<<"E = "<<metamorphosis->GetEnergy()<<" ("<<metamorphosis->GetImageEnergy()/metamorphosis->GetInitialEnergy()*100<<"%)"<<endl;
+  cout<<"E = "<<metamorphosis->GetEnergy()<<" ("<<metamorphosis->GetImageEnergyFraction()*100<<"%)"<<endl;
   cout<<"Time = "<<clock.GetTotal()<<"s"<<" ("<<clock.GetTotal()/60<<"m)"<<endl;
  
   // Write output images 
@@ -359,7 +357,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     }
     catch(itk::ExceptionObject& exceptionObject)
     {
-      cerr<<"Error: Could not write CheckerBoard image: "<<checkerPath<<endl;
+      cerr<<"Error: Could not write checker board image: "<<checkerPath<<endl;
       cerr<<exceptionObject<<endl;
       returnValue = EXIT_FAILURE;
     }
@@ -529,10 +527,7 @@ public:
         ss<<"\tE, E_velocity, E_rate, E_image, LearningRate"<<std::endl;
       }
       //ss<<std::setprecision(4);// << std::fixed;
-      double imageEnergy = filter->GetImageEnergy();
-      double imageEnergyPercent = imageEnergy/filter->GetInitialEnergy()*100;
-      
-      ss<<filter->GetCurrentIteration()<<".\t"<<filter->GetEnergy()<<", "<<filter->GetVelocityEnergy()<<", "<<filter->GetRateEnergy()<<", "<<imageEnergy<<" ("<<imageEnergyPercent<<"%), ";
+      ss<<filter->GetCurrentIteration()<<".\t"<<filter->GetEnergy()<<", "<<filter->GetVelocityEnergy()<<", "<<filter->GetRateEnergy()<<", "<<filter->GetImageEnergy()<<" ("<<filter->GetImageEnergyFraction()*100<<"%), ";
       ss.setf(std::ios::scientific,std::ios::floatfield);
       ss<<filter->GetLearningRate()<<std::endl;
       std::cout<<ss.str();
