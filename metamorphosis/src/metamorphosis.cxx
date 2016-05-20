@@ -44,9 +44,9 @@ int main(int argc, char* argv[])
     cerr<<"\t\t  --scale Scale"<<endl;
     cerr<<"\t\t  --alpha RegistrationSmoothness"<<endl;
     cerr<<"\t\t  --beta BiasSmoothness"<<endl;
-    cerr<<"\t\t\t -1 = Disable bias correction"<<endl;
     cerr<<"\t\t  --sigma Sigma"<<endl;
     cerr<<"\t\t  --mu Mu"<<endl;
+    cerr<<"\t\t\t 0 = Disable bias correction"<<endl;
     cerr<<"\t\t  --epsilon LearningRate"<<endl;
     cerr<<"\t\t  --fraction MinimumInitialEnergyFraction"<<endl;
     cerr<<"\t\t  --steps NumberOfTimesteps"<<endl;

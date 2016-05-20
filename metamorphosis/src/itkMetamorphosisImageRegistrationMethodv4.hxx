@@ -12,11 +12,11 @@ MetamorphosisImageRegistrationMethodv4()
   m_Scale = 1.0;                      // 1
   m_RegistrationSmoothness = 0.01;    // 0.01
   m_BiasSmoothness = 0.05;            // 0.05
-  m_Mu = 10;                          // 10
+  m_Mu = 0.1;                         // 10
   m_Sigma = 1.0;                      // 1
   m_Gamma = 1.0;                      // 1
-  this->SetLearningRate(1e-2);        // 1e-6
-  this->SetMinLearningRate(1e-8); // 1e-12
+  this->SetLearningRate(1e-6);        // 1e-6
+  this->SetMinLearningRate(1e-12);    // 1e-12
   m_MinImageEnergyFraction = 0;  
   m_MinImageEnergy = 0;
   m_MaxImageEnergy = 0;
@@ -261,8 +261,7 @@ Initialize()
   m_NumberOfTimeSteps = velocity->GetLargestPossibleRegion().GetSize()[ImageDimension]; // J
   m_TimeStep = 1.0/(m_NumberOfTimeSteps - 1); // \Delta t
   m_RecalculateEnergy = true; // v and r have been initialized
-
-
+  
   typedef CastImageFilter<FixedImageType, VirtualImageType>  FixedCasterType;
   typename FixedCasterType::Pointer fixedCaster = FixedCasterType::New();
   fixedCaster->SetInput(this->GetFixedImage());
@@ -271,6 +270,9 @@ Initialize()
   m_MinImageEnergy = GetImageEnergy(fixedCaster->GetOutput());
   m_MaxImageEnergy = GetImageEnergy();
   
+  // Disable bias correction if \mu = 0
+  if(m_Mu < NumericTraits<double>::epsilon()){ m_UseBias = false; }
+
   this->InvokeEvent(InitializeEvent());
 }
 
@@ -318,7 +320,7 @@ GetRateEnergy()
 {
   if(m_UseBias)
   {
-    return 0.5 * vcl_pow( CalculateNorm(ApplyKernel(m_InverseRateKernel,m_Rate))/m_Mu ,2); // 0.5 \mu^{-2} ||L_R r||^2
+    return 0.5 * vcl_pow(m_Mu * CalculateNorm(ApplyKernel(m_InverseRateKernel,m_Rate)),2); // 0.5 \mu^2 ||L_R r||^2
   }
   else
   {
@@ -585,7 +587,7 @@ UpdateControls()
 
     typename TimeVaryingImageMultiplierType::Pointer multiplier1 = TimeVaryingImageMultiplierType::New();
     multiplier1->SetInput(ApplyKernel(m_RateKernel,rateJoiner->GetOutput())); // K_R[p]
-    multiplier1->SetConstant(-vcl_pow(m_Mu,2));     // -\mu^2
+    multiplier1->SetConstant(-vcl_pow(m_Mu,-2));     // -\mu^-2
 
     typename TimeVaryingImageAdderType::Pointer adder1 = TimeVaryingImageAdderType::New();
     adder1->SetInput1(m_Rate);                     // r
@@ -674,7 +676,7 @@ UpdateControls()
     else // If energy decreased...
     {
       // ...slightly increase learning rate
-      this->SetLearningRate(1.1*this->GetLearningRate());
+      this->SetLearningRate(1.03*this->GetLearningRate());
       return;
     }
 
