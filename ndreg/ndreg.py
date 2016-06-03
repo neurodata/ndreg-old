@@ -29,13 +29,21 @@ def isIterable(obj):
     """
     return hasattr([],'__iter__')
 
+def isNumber(variable):
+    try:
+        float(variable)
+    except TypeError:
+        return False
+    return True
+
 def run(command, checkReturnValue=True, quiet=True):
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
     outText = ""
+
     for line in iter(process.stdout.readline, ''):
-        if not quiet: sys.stdout.write(line)
+        if not quiet:  sys.stdout.write(line)
         outText += line
-    
+    #process.wait()
     process.communicate()[0]
     returnValue = process.returncode
     if checkReturnValue and (returnValue != 0): raise Exception(outText)
@@ -487,7 +495,7 @@ def imgAffine(inImg, refImg, useNearestNeighborInterpolation=False, useRigid=Fal
     return affine
     
 
-def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, useNearestNeighborInterpolation=False, useBias=False, useMI=False, iterations=1000, verbose=True, outDirPath=""):
+def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=True, useMI=False, verbose=True, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
     """
@@ -507,12 +515,13 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, useNearestNeighborInt
     invFieldPath = outDirPath + "invField.vtk"
 
     binPath = ndregDirPath + "metamorphosis "
-    command = binPath + " --in {0} --ref {1} --out {2} --alpha {3} --beta {4} --scale 0.5 --field {5} --invfield {6} --iterations {7} --verbose ".format(inPath, refPath, outPath, alpha, beta, fieldPath, invFieldPath, iterations)
+    command = binPath + " --in {0} --ref {1} --out {2} --alpha {3} --beta {4} --field {5} --invfield {6} --iterations {7} --scale {8} --verbose ".format(inPath, refPath, outPath, alpha, beta, fieldPath, invFieldPath, iterations, scale)
     if(not useBias): command += " --mu 0"
     if(useMI):
-        command += " --cost 1 --sigma 1e-4 --epsilon 1e-6"
+        command += " --cost 1 --sigma 1e-4 --epsilon 1e-2"
         
     os.system(command)
+    #run(command, quiet=not(verbose))
 
     field = imgRead(fieldPath)
     invField = imgRead(invFieldPath)
@@ -521,7 +530,88 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, useNearestNeighborInt
     return (field, invField)
 
 
-def imgRegistration(inImg, refImg, scale=1.0, alpha=0.02, iterations=1000, useMI=False, verbose=False, outDirPath=""):
+def imgMetamorphosisCascading(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=True, useMI=False, verbose=True, outDirPath=""):
+    """
+    Performs Metamorphic LDDMM between input and reference images
+    """
+    useTempDir = False
+    if outDirPath == "":
+        useTempDir = True
+        outDirPath = tempfile.mkdtemp() + "/"
+    else:
+        outDirPath = dirMake(outDirPath)
+
+    if isNumber(alphaList): alphaList = [float(alphaList)]
+    if isNumber(betaList): betaList = [float(betaList)]
+    if isNumber(scaleList): scaleList = [float(scaleList)]
+    
+    numSteps = max(len(alphaList), len(betaList), len(scaleList))
+
+    if len(alphaList) != numSteps:
+        if len(alphaList) != 1:
+            raise Exception("Legth of alphaList must be 1 or same length as betaList or scaleList")
+        else:
+            alphaList *= numSteps
+
+    if len(betaList) != numSteps:
+        if len(betaList) != 1:
+            raise Exception("Legth of betaList must be 1 or same length as alphaList or scaleList")
+        else:
+            betaList *= numSteps
+        
+    if len(scaleList) != numSteps:
+        if len(scaleList) != 1:
+            raise Exception("Legth of scaleList must be 1 or same length as alphaList or betaList")
+        else:
+            scaleList *= numSteps
+
+    origInImg = inImg
+    for step in range(numSteps):
+        alpha = alphaList[step]
+        beta = betaList[step]
+        scale = scaleList[step]
+        stepDirPath = outDirPath + "step" + str(step) + "/"
+        if(verbose): print("Step {0}: alpha={1}, beta={2}, scale={3}".format(step,alpha, beta, scale))
+        
+        (field, invField) = imgMetamorphosis(inImg, refImg, 
+                                             alpha, 
+                                             beta, 
+                                             scale, 
+                                             iterations, 
+                                             useNearestNeighborInterpolation, 
+                                             useBias, 
+                                             useMI, 
+                                             verbose, 
+                                             outDirPath=stepDirPath)
+
+        if step == 0:
+            compositeField = field
+            compositeInvField = invField
+        else:
+            compositeField = fieldApplyField(field, compositeField)
+            compositeInvField = fieldApplyField(compositeInvField, invField)
+
+            fieldPath = stepDirPath+"field.vtk"
+            imgWrite(compositeField, fieldPath)
+
+            invFieldPath = stepDirPath+"invField.vtk"
+            imgWrite(compositeInvField, invFieldPath)
+
+        inImg = imgApplyField(origInImg, compositeField, size=refImg.GetSize())
+
+
+    # Write final results
+    imgWrite(compositeField, outDirPath+"field.vtk")
+    imgWrite(compositeInvField, outDirPath+"invField.vtk")
+    imgWrite(inImg, outDirPath+"out.img")
+    imgWrite(imgChecker(inImg,refImg), outDirPath+"checker.img")
+
+    # Clean up if necessary
+    if useTempDir: shutil.rmtree(outDirPath)
+    
+    return (compositeField, compositeInvField)
+
+def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000, useMI=False, verbose=False, outDirPath=""):
     useTempDir = False
     if outDirPath == "":
         useTempDir = True
@@ -574,7 +664,8 @@ def imgRegistration(inImg, refImg, scale=1.0, alpha=0.02, iterations=1000, useMI
 
     # Deformably align in and ref images
     if(verbose): print("Deformable alignment")
-    (field, invField) = imgMetamorphosis(inImg, refImg, alpha=0.01, useBias=False, useMI=useMI, verbose=verbose, iterations=iterations, outDirPath=lddmmDirPath)
+    (field, invField) = imgMetamorphosisCascading(inImg, refImg, alphaList=alphaList, scaleList=[0.5], useBias=False, useMI=useMI, verbose=verbose, iterations=iterations, outDirPath=lddmmDirPath)
+                        #imgMetamorphosisCascading(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=True, useMI=False, verbose=True, outDirPath="")
     field = fieldApplyField(field, affineField)
     invField = fieldApplyField(invAffineField, invField)
     inImg = imgApplyField(initialInImg, field, size=refImg.GetSize())
@@ -583,17 +674,5 @@ def imgRegistration(inImg, refImg, scale=1.0, alpha=0.02, iterations=1000, useMI
     imgWrite(invField, lddmmDirPath+"invField.vtk")
     imgWrite(inImg, lddmmDirPath+"in.img")    
 
-    """
-    inImg = imgApplyField(origInImg, field, size=origRefImg.GetSize())
-    imgWrite(inImg, outDirPath+"in.img")
-    imgWrite(imgChecker(inImg, origRefImg), outDirPath+"refChecker.img")
-
-
-    refImg = imgApplyField(origRefImg, invField, size=origInImg.GetSize())
-    imgWrite(refImg, outDirPath+"ref.img")
-    imgWrite(imgChecker(refImg, origInImg), outDirPath+"inChecker.img")
-    """
-
     if useTempDir: shutil.rmtree(outDirPath)
     return (field, invField)
-
