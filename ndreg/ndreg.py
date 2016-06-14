@@ -22,6 +22,9 @@ ndToSitkDataTypes = {'uint8': sitk.sitkUInt8,
                      'float32': sitk.sitkFloat32}
 
 ndregDirPath = os.path.dirname(os.path.realpath(__file__))+"/"
+ndregTranslation = 0
+ndregRigid = 1
+ndregAffine = 2
 
 def isIterable(obj):
     """
@@ -75,8 +78,11 @@ def txtWriteList(parameterList, path):
     txtWrite(" ".join(map(str,parameterList)), path)
 
 def dirMake(dirPath):
-    if not os.path.exists(dirPath): os.makedirs(dirPath)
-    return os.path.normpath(dirPath) + "/"
+    if dirPath != "":
+        if not os.path.exists(dirPath): os.makedirs(dirPath)
+        return os.path.normpath(dirPath) + "/"
+    else:
+        return dirPath
 
 
 def imgHM(inImg, refImg, numMatchPoints=8, numBins=64):
@@ -183,8 +189,6 @@ def imgWrite(img, path):
     # Reformat files to be compatible with CIS Software
     ext = os.path.splitext(path)[1].lower()
     if ext == ".vtk": vtkReformat(path, path)
-        
-    return path
 
 def vtkReformat(inPath, outPath):
     """
@@ -438,14 +442,56 @@ def fieldApplyField(inField, field):
     # Get output displacement field
     return sitk.TransformToDisplacementFieldFilter().Execute(outTransform, vectorType, size, zeroOrigin, spacing, identityDirection)
 
+def reorient(inImg, inOrient, outOrient):
+    """
+    Reorients image from input orientation inOrient to output orientation outOrient.
+    inOrient and outOrient must be strings.
+    e.g. Using inOrient = "las" and outOrient = "rpi" reorients the input image from Left-Anterior-Superior orientation to Right-Posterior-Inferior orientation.
+    """
+
+    if (len(inOrient) != dimension) or not(type(inOrient) is str): raise Exception("inOrient must be a string of length {0}.".format(dimension))
+    if (len(outOrient) != dimension) or not(type(outOrient) is str): raise Exception("outOrient must be a string of length {0}.".format(dimension))
+    inOrient = inOrient.lower()
+    outOrient = outOrient.lower()
+    
+    inDirection = ""
+    outDirection = ""
+    orientToDirection = {"r":"r", "l":"r", "s":"s", "i":"s", "a":"a", "p":"a"}
+    for i in range(dimension):
+        try:
+            inDirection += orientToDirection[inOrient[i]]
+        except:
+            raise Exception("inOrient \'{0}\' is invalid.".format(inOrient))
+
+        try:
+            outDirection += orientToDirection[outOrient[i]]
+        except:
+            raise Exception("outOrient \'{0}\' is invalid.".format(outOrient))
+        
+    if len(set(inDirection)) != dimension: raise Exception("inOrient \'{0}\' is invalid.".format(inOrient))
+    if len(set(outDirection)) != dimension: raise Exception("outOrient \'{0}\' is invalid.".format(outOrient))
+
+    order = []
+    flip = []
+    for i in range(dimension):
+        j = outDirection.find(inDirection[i])
+        order += [j]
+        flip += [inOrient[i] != outOrient[j]]
+
+    outImg = sitk.FlipImageFilter().Execute(inImg, flip, False)
+    outImg = sitk.PermuteAxesImageFilter().Execute(outImg, order)
+    outImg.SetDirection(identityDirection)
+
+    return outImg
 
 def imgChecker(inImg, refImg, useHM=True):
     """
     Checkerboards input image with reference image
     """    
+    inImg = sitk.Cast(inImg, refImg.GetPixelID())
     inSize = list(inImg.GetSize())
     refSize = list(refImg.GetSize())
-    
+
     if(inSize != refSize):
         sourceSize = np.array([inSize, refSize]).min(0)
         tmpImg = sitk.Image(refSize,refImg.GetPixelID()) # Empty image with same size as reference image
@@ -455,12 +501,11 @@ def imgChecker(inImg, refImg, useHM=True):
     if useHM:
         numBins = 64
         numMatchPoints = 8
-        inImg = sitk.Cast(inImg, refImg.GetPixelID())
         inImg = sitk.HistogramMatchingImageFilter().Execute(inImg, refImg, numBins, numMatchPoints, False)
 
     return sitk.CheckerBoardImageFilter().Execute(inImg, refImg,[8]*dimension)
 
-def imgAffine(inImg, refImg, useNearestNeighborInterpolation=False, useRigid=False, useMI=False, iterations=1000, verbose=False):
+def imgAffine(inImg, refImg, method=ndregAffine, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False):
     """
     Perform Affine Registration between input image and reference image
     """
@@ -469,7 +514,10 @@ def imgAffine(inImg, refImg, useNearestNeighborInterpolation=False, useRigid=Fal
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearestNeighborInterpolation]
     
     # Set transform
-    transform = [sitk.AffineTransform(dimension), sitk.Similarity3DTransform()][useRigid]
+    try:
+        transform = [sitk.TranslationTransform(dimension), sitk.Similarity3DTransform(), sitk.AffineTransform(dimension)][method]
+    except:
+        raise Exception("method is invalad")
 
     # Do registration
     registration = sitk.ImageRegistrationMethod()
@@ -479,21 +527,60 @@ def imgAffine(inImg, refImg, useNearestNeighborInterpolation=False, useRigid=Fal
     if useMI:
         numHistogramBins = 64
         registration.SetMetricAsMattesMutualInformation(numHistogramBins)
-        learningRate=0.01
+        learningRate=0.1
     else:
         registration.SetMetricAsMeanSquares()
         learningRate=0.000001
-    registration.SetOptimizerAsGradientDescent(learningRate=learningRate, numberOfIterations=iterations)
-    if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
+    registration.SetOptimizerAsRegularStepGradientDescent(learningRate=learningRate, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
+    if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1} \t{2}".format(registration.GetOptimizerIteration(),registration.GetMetricValue(), registration.GetOptimizerLearningRate())))
 
     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,0.25),
                          sitk.SmoothingRecursiveGaussian(inImg,0.25) )
 
+    if method == ndregTranslation:
+        affine = identityAffine[0:dimension**2] + list(transform.GetOffset())
+    else:
+        affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
 
-    # Write final transform parameters to text file
-    affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
     return affine
+
+def imgAffineComposite(inImg, refImg, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False, outDirPath=""):
+    useTempDir = False
+    if outDirPath == "":
+        useTempDir = True
+        outDirPath = tempfile.mkdtemp() + "/"
+    else:
+        outDirPath = dirMake(outDirPath)
+
+    origInImg = inImg
+    methodList = [ndregTranslation, ndregRigid, ndregAffine]
+    methodNameList = ["translation", "rigid", "affine"]
+    for (step, method) in enumerate(methodList):
+        methodName = methodNameList[step]
+        stepDirPath = outDirPath + str(step) + "_" + methodName + "/"
+        dirMake(stepDirPath)
+        if(verbose): print("Step {0}".format(methodName))
+
+        affine = imgAffine(inImg, refImg, method=method, useNearestNeighborInterpolation=useNearestNeighborInterpolation, useMI=useMI, iterations=iterations, verbose=verbose)
+
+        if step == 0:
+            compositeAffine = affine
+        else:
+            compositeAffine = affineApplyAffine(affine, compositeAffine)
+
+        inImg = imgApplyAffine(origInImg, compositeAffine, size=refImg.GetSize())
+        imgWrite(inImg, stepDirPath+"in.img")
+        txtWriteList(compositeAffine, stepDirPath+"affine.txt")
+
+    # Write final results
+    txtWrite(compositeAffine, outDirPath+"affine.txt")
+    imgWrite(inImg, outDirPath+"out.img")
+    imgWrite(imgChecker(inImg, refImg), outDirPath+"checker.img")
+
+    # Clean up if necessary
+    if useTempDir: shutil.rmtree(outDirPath)
     
+    return compositeAffine    
 
 def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=True, useMI=False, verbose=True, outDirPath=""):
     """
@@ -518,8 +605,8 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
     command = binPath + " --in {0} --ref {1} --out {2} --alpha {3} --beta {4} --field {5} --invfield {6} --iterations {7} --scale {8} --verbose ".format(inPath, refPath, outPath, alpha, beta, fieldPath, invFieldPath, iterations, scale)
     if(not useBias): command += " --mu 0"
     if(useMI):
-        command += " --cost 1 --sigma 1e-4 --epsilon 1e-2"
-        
+        command += " --cost 1 --sigma 1e-4 --epsilon 1e-3"
+
     os.system(command)
     #run(command, quiet=not(verbose))
 
@@ -530,7 +617,7 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
     return (field, invField)
 
 
-def imgMetamorphosisCascading(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=True, useMI=False, verbose=True, outDirPath=""):
+def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=True, useMI=False, verbose=True, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
     """
@@ -620,9 +707,8 @@ def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000,
         outDirPath = dirMake(outDirPath)
 
     initialDirPath = outDirPath + "0_initial/"
-    rigidDirPath = outDirPath + "1_rigid/"
-    affineDirPath = outDirPath + "2_affine/"
-    lddmmDirPath = outDirPath + "3_lddmm/"
+    affineDirPath = outDirPath + "1_affine/"
+    lddmmDirPath = outDirPath + "2_lddmm/"
     origInImg = inImg
     origRefImg = refImg
 
@@ -637,35 +723,17 @@ def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000,
     imgWrite(inImg, initialDirPath+"in.img")
     imgWrite(refImg, initialDirPath+"ref.img")
 
-    # Rigid align in and ref images
-    if(verbose): print("Rigid alignment")
-    rigid = imgAffine(inImg, refImg, useRigid=True, useMI=useMI, iterations=iterations, verbose=verbose)
-    inImg = imgApplyAffine(initialInImg, rigid)
-
-    txtWriteList(rigid, rigidDirPath+"affine.txt")
-    txtWriteList(affineInverse(rigid), rigidDirPath+"invAffine.txt")
-    imgWrite(inImg, rigidDirPath+"in.img")
-
-
-    # Affine align in and ref images
-    if(verbose): print("Affine alignment")
-    affine = imgAffine(inImg, refImg, useRigid=False, useMI=useMI, iterations=iterations, verbose=verbose)
-    affine = affineApplyAffine(affine, rigid)
-    affineField = affineToField(affine, inImg.GetSize(), inImg.GetSpacing())
+    if(verbose): print("Affine alignment")    
+    affine = imgAffineComposite(inImg, refImg, useMI=useMI, iterations=iterations, verbose=verbose, outDirPath=affineDirPath)
+    affineField = affineToField(affine, refImg.GetSize(), refImg.GetSpacing())
     invAffine = affineInverse(affine)
-    invAffineField = affineToField(invAffine, refImg.GetSize(), refImg.GetSpacing())
+    invAffineField = affineToField(invAffine, inImg.GetSize(), inImg.GetSpacing())
     inImg = imgApplyField(initialInImg, affineField, size=refImg.GetSize())
-
-    txtWriteList(affine, affineDirPath+"affine.txt")
-    txtWriteList(affine, affineDirPath+"invAffine.txt")
-    imgWrite(affineField, affineDirPath+"field.vtk")
-    imgWrite(invAffineField, affineDirPath+"invField.vtk")
     imgWrite(inImg, affineDirPath+"in.img")
 
     # Deformably align in and ref images
     if(verbose): print("Deformable alignment")
-    (field, invField) = imgMetamorphosisCascading(inImg, refImg, alphaList=alphaList, scaleList=[0.5], useBias=False, useMI=useMI, verbose=verbose, iterations=iterations, outDirPath=lddmmDirPath)
-                        #imgMetamorphosisCascading(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=True, useMI=False, verbose=True, outDirPath="")
+    (field, invField) = imgMetamorphosisComposite(inImg, refImg, alphaList=alphaList, scaleList=[1.0], useBias=False, useMI=useMI, verbose=verbose, iterations=iterations, outDirPath=lddmmDirPath)
     field = fieldApplyField(field, affineField)
     invField = fieldApplyField(invAffineField, invField)
     inImg = imgApplyField(initialInImg, field, size=refImg.GetSize())
@@ -673,6 +741,7 @@ def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000,
     imgWrite(field, lddmmDirPath+"field.vtk")
     imgWrite(invField, lddmmDirPath+"invField.vtk")
     imgWrite(inImg, lddmmDirPath+"in.img")    
+    imgWrite(imgChecker(inImg, refImg), lddmmDirPath+"checker.img")
 
     if useTempDir: shutil.rmtree(outDirPath)
     return (field, invField)

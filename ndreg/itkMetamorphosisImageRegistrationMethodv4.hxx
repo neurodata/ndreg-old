@@ -133,6 +133,7 @@ InitializeKernels(TimeVaryingImagePointer kernel, TimeVaryingImagePointer invers
     for(i = 0, A = gamma; i < ImageDimension; i++)
     {
       A += 2 * alpha * vcl_pow(size[i],2) * ( 1.0-cos(2*vnl_math::pi*k[i]/size[i]) );
+      //A += 2 * alpha * vcl_pow(size[i]/m_Scale,2) * ( 1.0-cos(2*vnl_math::pi*k[i]/size[i]) );
       //A += 2 * alpha * vcl_pow(spacing[i],-2) * ( 1.0 - cos(2*vnl_math::pi*k[i]*spacing[i]) );
       //A += alpha * vcl_pow(2*vnl_math::pi*k[i]*spacing[i],2);
     }
@@ -185,9 +186,11 @@ Initialize()
   Therefore we pad the velocity so that this condition is met.
   */
   typedef ForwardFFTImageFilter<TimeVaryingImageType> FFTType;
+  unsigned int greatestPrimeFactor = FFTType::New()->GetSizeGreatestPrimeFactor();
+
   typedef FFTPadImageFilter<TimeVaryingFieldType> PadderType;
   typename PadderType::Pointer padder = PadderType::New();
-  padder->SetSizeGreatestPrimeFactor(FFTType::New()->GetSizeGreatestPrimeFactor());
+  padder->SetSizeGreatestPrimeFactor(vnl_math_min((unsigned int)5, greatestPrimeFactor));
   padder->SetInput(velocity);
   padder->Update();
   velocity = padder->GetOutput();
@@ -454,12 +457,26 @@ GetBias()
 template<typename TFixedImage, typename TMovingImage>
 typename MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::FieldPointer
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
-GetMetricDerivative(FixedImageGradientFilterPointer fixedImageGradientFilter, MovingImageGradientFilterPointer movingImageGradientFilter)
+GetMetricDerivative(FieldPointer field, bool initializeMetric = true, bool useImageGradients = true)
 {
+  FixedImageGradientFilterPointer fixedImageGradientFilter;
+  MovingImageGradientFilterPointer movingImageGradientFilter;
+
+  if(useImageGradients)
+  {
+    fixedImageGradientFilter = m_FixedImageGradientFilter; // \nabla I_1
+    movingImageGradientFilter = m_MovingImageGradientFilter; // \nabla I_0
+  }
+  else
+  {
+    fixedImageGradientFilter = dynamic_cast<FixedImageGradientFilterType*>(m_FixedImageConstantGradientFilter.GetPointer());    // [1,1,1]
+    movingImageGradientFilter = dynamic_cast<MovingImageGradientFilterType*>(m_MovingImageConstantGradientFilter.GetPointer()); // [1,1,1]
+  }
+
   /* Compute metric derivative p(t) \nabla I(t) */
   typedef DisplacementFieldTransform<RealType,ImageDimension> DisplacementFieldTransformType;
-  typename DisplacementFieldTransformType::Pointer backwardTransform = DisplacementFieldTransformType::New();
-  backwardTransform->SetDisplacementField(this->m_OutputTransform->GetDisplacementField()); // \phi_{t1}
+  typename DisplacementFieldTransformType::Pointer fieldTransform = DisplacementFieldTransformType::New();
+  fieldTransform->SetDisplacementField(field); // \phi_{t1}
 
   typedef CastImageFilter<VirtualImageType, MovingImageType> CasterType;
   typename CasterType::Pointer caster = CasterType::New();
@@ -467,14 +484,14 @@ GetMetricDerivative(FixedImageGradientFilterPointer fixedImageGradientFilter, Mo
   caster->Update();
 
   ImageMetricPointer metric = dynamic_cast<ImageMetricType*>(this->m_Metric.GetPointer()); 
-  metric->SetFixedImage(this->GetFixedImage());                // I_1
-  metric->SetFixedTransform(backwardTransform);                // \phi_{t1}
-  metric->SetFixedImageGradientFilter(fixedImageGradientFilter);
-  metric->SetMovingImage(caster->GetOutput());                 // I(1)
-  metric->SetMovingTransform(backwardTransform);               // \phi_{t1}
-  metric->SetMovingImageGradientFilter(movingImageGradientFilter);
+  metric->SetFixedImage(this->GetFixedImage());                    // I_1
+  metric->SetFixedTransform(fieldTransform);                       // \phi_{t1}
+  metric->SetFixedImageGradientFilter(fixedImageGradientFilter);   // \nabla I_1
+  metric->SetMovingImage(caster->GetOutput());                     // I(1)
+  metric->SetMovingTransform(fieldTransform);                      // \phi_{t1}
+  metric->SetMovingImageGradientFilter(movingImageGradientFilter); // \nabla I_0
   metric->SetVirtualDomainFromImage(m_VirtualImage);
-  metric->Initialize();
+  if(initializeMetric){ metric->Initialize(); }
 
   // Setup metric derivative
   typename MetricDerivativeType::SizeValueType metricDerivativeSize = m_VirtualImage->GetLargestPossibleRegion().GetNumberOfPixels() * ImageDimension;
@@ -521,7 +538,7 @@ GetMetricDerivative(FixedImageGradientFilterPointer fixedImageGradientFilter, Mo
   multiplier1->SetConstant(vcl_pow(m_Sigma,-2)); // 0.5 \sigma^{-2}
   multiplier1->Update();
   
-  return multiplier1->GetOutput(); // p(t) \nabla I(t) = -0.5 \sigma^{-2} -dM(I(1) o \phi{t1}, I_1 o \phi{t1})
+  return multiplier1->GetOutput(); // p(t) \nabla I(t) = p(1, \phi{t1})  \nabla I(1, \phi{t1}) = -0.5 \sigma^{-2} -dM(I(1) o \phi{t1}, I_1 o \phi{t1})
 }
 
 template<typename TFixedImage, typename TMovingImage>
@@ -553,13 +570,13 @@ UpdateControls()
       this->m_OutputTransform->IntegrateVelocityField();
     }
     
-    velocityJoiner->PushBackInput(GetMetricDerivative(m_FixedImageGradientFilter,m_MovingImageGradientFilter)); // p(t) \nabla I(t)
-
+    velocityJoiner->PushBackInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), j==0, true)); // p(t) \nabla I(t) =  p(1, \phi{t1})  \nabla I(1, \phi{t1})
+   
     if(m_UseBias)
     {
       typedef VectorIndexSelectionCastImageFilter<FieldType, VirtualImageType> ComponentExtractorType;
       typename ComponentExtractorType::Pointer componentExtractor = ComponentExtractorType::New();
-      componentExtractor->SetInput(GetMetricDerivative(dynamic_cast<FixedImageGradientFilterType*>(m_FixedImageConstantGradientFilter.GetPointer()), dynamic_cast<MovingImageGradientFilterType*>(m_MovingImageConstantGradientFilter.GetPointer()))); // p(t) [1,1,1]
+      componentExtractor->SetInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), j==0, false)); // p(t) [1,1,1] = p(t) \nabla I(t) [1,1,1]
       componentExtractor->SetIndex(0);
       componentExtractor->Update();
 
