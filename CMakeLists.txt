@@ -11,7 +11,7 @@ endif()
 
 find_program(PYTHON "python")
 if(NOT PYTHON)
-    message(FATAL_ERROR "Python not found.")
+    message(FATAL_ERROR "Python not found. Please set PYTHON.")
 endif()
 
 # Configure setup.py in binary directory
@@ -20,32 +20,30 @@ set(SETUP_PY "${CMAKE_CURRENT_BINARY_DIR}/setup.py")
 configure_file(${SETUP_PY_IN} ${SETUP_PY})
 
 # Copy python source files to binary directory
-set(PYTHON_FILENAMES "ndreg.py;__init__.py")
+set(PY_FILENAME_LIST "ndreg.py;__init__.py")
 
-foreach(FILENAME ${PYTHON_FILENAMES})
-  set(PYTHON_SRC_FILES ${PYTHON_SRC_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/ndreg/${FILENAME})
-  set(PYTHON_BIN_FILES ${PYTHON_BIN_FILES} ${CMAKE_CURRENT_BINARY_DIR}/ndreg/${FILENAME})
-  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ndreg/${FILENAME}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/ndreg/${FILENAME} ${CMAKE_CURRENT_BINARY_DIR}/ndreg/${FILENAME}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/ndreg/${FILENAME})
+foreach(FILENAME ${PY_FILENAME_LIST})
+  set(SRC_PY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/ndreg/${FILENAME})
+  set(BIN_PY_PATH ${CMAKE_CURRENT_BINARY_DIR}/ndreg/${FILENAME})
+  set(BIN_PY_PATH_LIST ${BIN_PY_PATH_LIST} ${BIN_PY_PATH})
+  
+  add_custom_command(OUTPUT ${BIN_PY_PATH}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SRC_PY_PATH} ${BIN_PY_PATH}
+    DEPENDS ${SRC_PY_PATH})
 endforeach()
 
 # Build ndreg egg
 include(${ITK_USE_FILE})
 add_subdirectory(ndreg)
 
-set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/build/timestamp")
-add_custom_command(OUTPUT ${OUTPUT}
-    COMMAND ${PYTHON} ${SETUP_PY} build
-    COMMAND ${CMAKE_COMMAND} -E touch ${OUTPUT}
-    DEPENDS ${PYTHON_BIN_FILES} metamorphosis)
+set(TIMESTAMP "${CMAKE_CURRENT_BINARY_DIR}/build/timestamp")
+add_custom_command(OUTPUT ${TIMESTAMP}
+    COMMAND ${PYTHON} -m py_compile ${BIN_PY_PATH_LIST} # Check for syntax errors by compiling python files
+    COMMAND ${PYTHON} ${SETUP_PY} build                 # Make the egg
+    COMMAND ${CMAKE_COMMAND} -E touch ${TIMESTAMP}      # Generate timestamp file
+    DEPENDS ${BIN_PY_PATH_LIST} metamorphosis)
 
-add_custom_target(ndreg ALL DEPENDS ${OUTPUT})
+add_custom_target(ndreg ALL DEPENDS ${TIMESTAMP})
 
 # Install ndreg egg
 install(CODE "execute_process(COMMAND ${PYTHON} ${SETUP_PY} install --user)")
-
-
-
-
-

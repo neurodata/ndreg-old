@@ -4,7 +4,7 @@ from __future__ import print_function
 import numpy as np
 import SimpleITK as sitk
 import ndio.remote.neurodata as neurodata
-import os, math, sys, subprocess, tempfile, shutil
+import os, math, sys, subprocess, tempfile, shutil, requests
 from itertools import product
 
 dimension = 3
@@ -24,7 +24,7 @@ ndToSitkDataTypes = {'uint8': sitk.sitkUInt8,
 ndregDirPath = os.path.dirname(os.path.realpath(__file__))+"/"
 ndregTranslation = 0
 ndregRigid = 1
-ndregAffine = 2
+ndregAffine = 2 
 
 def isIterable(obj):
     """
@@ -144,6 +144,125 @@ def imgDownload(token, channel="", resolution=0, server="openconnecto.me"):
 
     return img
 
+def limsGetMetadata(token):
+    nd = neurodata()
+    r = requests.get(nd.meta_url("metadata/ocp/get/" + token))
+    return r.json()
+
+def limsSetMetadata(token, metadata):
+    nd = neurodata()
+    nd.set_metadata(token, metadata)
+
+def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolution=0, threshold=0, outDirPath="", verbose=True):
+    """
+    Downloads, resamples and reorients input image to the spacing and orientation of the reference image.
+    If threshold > 0 the background is masked out based on the given threshold.
+    This function assumes that the input token (and reference token if used) has a corresponding LIMS token.
+    The LIMS metadata should contain \"spacing\" and \"orientation\" fields.
+    The \"spacing\" field should specify the x, y and z spacing of the image in millimeters and e.g. spacing=[0.025, 0.025, 0.025]
+    The \"orientation\" field should be orientation strings specifying the x, y, z orientation of the image e.g. orientation="las"
+    See documentation of the \"imgReorient\" function for more details on orientation strings.
+    """
+    if outDirPath != "": outDirPath = dirMake(outDirPath)
+
+    # Create NeuroData instance
+    nd = neurodata()
+
+    # Set reference default spacing and orientation
+    refSpacing = [0.025, 0.025, 0.025] 
+    refOrient = "rsa" # Coronal sliced images
+
+    if refToken != "":
+        # Get project metadata for reference token
+        try:
+            refProjMetadata = nd.get_proj_info(refToken)
+        except:
+            raise Exception("Reference project token {0} was not found on server {1}".format(inToken, nd.hostname))
+
+        # Get lims metadata (spacing and orientation) of reference token
+        refLimsMetadata = limsGetMetadata(refToken)
+        
+        if "spacing" in refLimsMetadata:
+            refSpacing = refLimsMetadata["spacing"]
+
+            # Scale reference spacing values of input image based on resolution level
+            for i in range(0, dimension-1): refSpacing[i] *= 2**refResolution
+            if refProjMetadata['dataset']['scaling'] != 'zslices': refSpacing[dimension-1] *= 2**refResolution
+        else:
+            if verbose: print("Warning: Reference LIMS token {0} does not have an \"spacing\" feild. Using value of {1} from project token {0}".format(refToken, refSpacing))
+
+        if "orientation" in refLimsMetadata:
+            refOrient = refLimsMetadata["orientation"]
+        else:
+            if verbose: print("Warning: Reference LIMS token {0} does not have an \"orientation\" feild. Usign default value of ".format(refToken, refOrient))
+
+    # Get project metadata for input token
+    try:
+        inProjMetadata = nd.get_proj_info(inToken)
+    except:
+        raise Exception("Token {0} was not found on server {1}".format(inToken, nd.hostname))
+
+    # Get lims metadata for input token
+    inLimsMetadata = limsGetMetadata(inToken)
+
+    # Download input image 
+    if verbose: print("Downloading input image")
+    inImg = imgDownload(inToken, channel=inChannel, resolution=inResolution)
+
+    # Check if downloaded image is empty
+    epsilon = sys.float_info.epsilon    
+    stats = sitk.StatisticsImageFilter()
+    stats.Execute(inImg)
+
+    if (stats.GetMean() < epsilon) and (stats.GetVariance() < epsilon):
+        raise Exception("Error: Input image downoaded from token {0} is empty".format(inToken))
+
+    inSpacing = inImg.GetSpacing()
+
+    # Set input image's spacing based on lims metadata 
+    if 'spacing' in inLimsMetadata.keys():
+        # If lims metadata contains a spacing field then set spacing of downloaded image using it
+        inSpacing = inLimsMetadata['spacing']
+
+        # Scale spacing values of input image based on resolution level
+        for i in range(0, dimension-1): inSpacing[i] *= 2**inResolution
+        if inProjMetadata['dataset']['scaling'] != 'zslices': inSpacing[dimension-1] *= 2**inResolution
+        inImg.SetSpacing(inSpacing)
+    else:
+        if verbose: print("Warning: LIMS token {0} does not have an \"spacing\" feild.  Using value of {1} from project token {0}".format(inToken, inSpacing))
+
+    if outDirPath != "": imgWrite(inImg,outDirPath+"/0_download/img.img")
+
+    # Resample input image to spacing of reference image
+    if verbose: print("Resampling input image")
+    inImg = imgResample(inImg, refSpacing)
+    if outDirPath != "": imgWrite(inImg,outDirPath+"/1_resample/img.img")
+
+    # Reorient input image to orientation of reference image
+    if "orientation" in inLimsMetadata.keys():
+        if verbose: print("Reorienting input image")
+        # If lims metadata contains a orientation field then reorient image
+        inOrient = inLimsMetadata["orientation"]
+        inImg = imgReorient(inImg, inOrient, refOrient)
+    else:
+        if verbose: print("Warning: LIMS token {0} does not have an \"orientation\" feild. Could not reorient image.".format(inToken))
+
+    if outDirPath != "": imgWrite(inImg,outDirPath+"/2_reorient/img.img")
+
+    if threshold > 0:
+        # Mask out background of input image
+        if verbose: print("Masking input image")
+        mask = imgMakeMask(inImg, threshold=threshold)
+        inImg = imgMask(inImg,mask)
+
+    if outDirPath != "": 
+        imgWrite(inImg, outDirPath+"/3_mask/img.img")
+        imgWrite(mask, outDirPath+"/3_mask/mask.img")
+        imgWrite(inImg, outDirPath+"/img.img")
+        imgWrite(mask, outDirPath+"/mask.img")
+
+    return inImg
+
 
 def imgUpload(img, token, channel="", resolution=0, server="openconnecto.me"):
     """
@@ -177,7 +296,6 @@ def imgUpload(img, token, channel="", resolution=0, server="openconnecto.me"):
 
     # Upload all image data from specified channel
     nd.post_cutout(token, channel, 0, 0, 0, data=array, resolution=resolution)
-
 
 def imgWrite(img, path):
     """
@@ -238,14 +356,8 @@ def imgLargestMaskObject(maskImg):
     labelImg = ccFilter.Execute(maskImg)
     numberOfLabels = ccFilter.GetObjectCount()
     labelArray = sitk.GetArrayFromImage(labelImg)
-    largestLabel = 0
-    largestSize = 0
-    for i in range(1,numberOfLabels+1):
-        size = sum(labelArray == i)
-        if size > largestSize:
-            largestSize = size
-            largestLabel = i
-
+    labelSizes = np.bincount(labelArray.flatten())
+    largestLabel = np.argmax(labelSizes[1:])+1
     outImg = sitk.GetImageFromArray((labelArray==largestLabel).astype(np.int16))
     outImg.CopyInformation(maskImg) # output image should have same metadata as input mask image
     return outImg
@@ -253,7 +365,7 @@ def imgLargestMaskObject(maskImg):
 def imgMakeMask(inImg, threshold=None, forgroundValue=1):
     """
     Generates morphologically smooth mask with given forground value from input image.
-    If the threshold is given, the binary mask is initialzed using the given threshold...
+    If a threshold is given, the binary mask is initialzed using the given threshold...
     ...Otherwise it is initialized using Otsu's Method.
     """
     
@@ -272,8 +384,8 @@ def imgMakeMask(inImg, threshold=None, forgroundValue=1):
     # Assuming input image is has isotropic resolution...
     # ... compute size of morphological kernels in voxels.
     spacing = min(list(inImg.GetSpacing()))
-    openingRadiusMM = 0.05 # In mm
-    closingRadiusMM = 0.125 # In mm
+    openingRadiusMM = 0.05  # In mm
+    closingRadiusMM = 0.2   # In mm
     openingRadius = max(1, int(round(openingRadiusMM / spacing))) # In voxels
     closingRadius = max(1, int(round(closingRadiusMM / spacing))) # In voxels
 
@@ -289,7 +401,7 @@ def imgMakeMask(inImg, threshold=None, forgroundValue=1):
     closer.SetKernelRadius(closingRadius)
     outMask = closer.Execute(tmpMask)
 
-    return outMask
+    return imgLargestMaskObject(outMask)
 
 def imgMask(img, mask):
     """
@@ -442,17 +554,21 @@ def fieldApplyField(inField, field):
     # Get output displacement field
     return sitk.TransformToDisplacementFieldFilter().Execute(outTransform, vectorType, size, zeroOrigin, spacing, identityDirection)
 
-def reorient(inImg, inOrient, outOrient):
+def imgReorient(inImg, inOrient, outOrient):
     """
     Reorients image from input orientation inOrient to output orientation outOrient.
-    inOrient and outOrient must be strings.
-    e.g. Using inOrient = "las" and outOrient = "rpi" reorients the input image from Left-Anterior-Superior orientation to Right-Posterior-Inferior orientation.
+    inOrient and outOrient must be orientation strings specifying the orientation of the image.
+    For example an orientation string of "las" means that the ...
+        x-axis increases from \"l\"eft to right
+        y-axis increases from \"a\"nterior to posterior
+        z-axis increases from \"s\"uperior to inferior
+    Thus using inOrient = "las" and outOrient = "rpi" reorients the input image from left-anterior-superior to right-posterior-inferior orientation.
     """
 
-    if (len(inOrient) != dimension) or not(type(inOrient) is str): raise Exception("inOrient must be a string of length {0}.".format(dimension))
-    if (len(outOrient) != dimension) or not(type(outOrient) is str): raise Exception("outOrient must be a string of length {0}.".format(dimension))
-    inOrient = inOrient.lower()
-    outOrient = outOrient.lower()
+    if (len(inOrient) != dimension) or not isinstance(inOrient, basestring): raise Exception("inOrient must be a string of length {0}.".format(dimension))
+    if (len(outOrient) != dimension) or not isinstance(outOrient, basestring): raise Exception("outOrient must be a string of length {0}.".format(dimension))
+    inOrient = str(inOrient).lower()
+    outOrient = str(outOrient).lower()
     
     inDirection = ""
     outDirection = ""
@@ -481,6 +597,7 @@ def reorient(inImg, inOrient, outOrient):
     outImg = sitk.FlipImageFilter().Execute(inImg, flip, False)
     outImg = sitk.PermuteAxesImageFilter().Execute(outImg, order)
     outImg.SetDirection(identityDirection)
+    outImg.SetOrigin(zeroOrigin)
 
     return outImg
 
@@ -503,7 +620,7 @@ def imgChecker(inImg, refImg, useHM=True):
         numMatchPoints = 8
         inImg = sitk.HistogramMatchingImageFilter().Execute(inImg, refImg, numBins, numMatchPoints, False)
 
-    return sitk.CheckerBoardImageFilter().Execute(inImg, refImg,[8]*dimension)
+    return sitk.CheckerBoardImageFilter().Execute(inImg, refImg,[4]*dimension)
 
 def imgAffine(inImg, refImg, method=ndregAffine, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False):
     """
@@ -533,9 +650,12 @@ def imgAffine(inImg, refImg, method=ndregAffine, useNearestNeighborInterpolation
         learningRate=0.000001
     registration.SetOptimizerAsRegularStepGradientDescent(learningRate=learningRate, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
     if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1} \t{2}".format(registration.GetOptimizerIteration(),registration.GetMetricValue(), registration.GetOptimizerLearningRate())))
-
+                    
     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,0.25),
                          sitk.SmoothingRecursiveGaussian(inImg,0.25) )
+
+
+                        
 
     if method == ndregTranslation:
         affine = identityAffine[0:dimension**2] + list(transform.GetOffset())
@@ -545,12 +665,7 @@ def imgAffine(inImg, refImg, method=ndregAffine, useNearestNeighborInterpolation
     return affine
 
 def imgAffineComposite(inImg, refImg, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False, outDirPath=""):
-    useTempDir = False
-    if outDirPath == "":
-        useTempDir = True
-        outDirPath = tempfile.mkdtemp() + "/"
-    else:
-        outDirPath = dirMake(outDirPath)
+    if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     origInImg = inImg
     methodList = [ndregTranslation, ndregRigid, ndregAffine]
@@ -559,7 +674,7 @@ def imgAffineComposite(inImg, refImg, useNearestNeighborInterpolation=False, use
         methodName = methodNameList[step]
         stepDirPath = outDirPath + str(step) + "_" + methodName + "/"
         dirMake(stepDirPath)
-        if(verbose): print("Step {0}".format(methodName))
+        if(verbose): print("Step {0}:".format(methodName))
 
         affine = imgAffine(inImg, refImg, method=method, useNearestNeighborInterpolation=useNearestNeighborInterpolation, useMI=useMI, iterations=iterations, verbose=verbose)
 
@@ -569,16 +684,15 @@ def imgAffineComposite(inImg, refImg, useNearestNeighborInterpolation=False, use
             compositeAffine = affineApplyAffine(affine, compositeAffine)
 
         inImg = imgApplyAffine(origInImg, compositeAffine, size=refImg.GetSize())
-        imgWrite(inImg, stepDirPath+"in.img")
-        txtWriteList(compositeAffine, stepDirPath+"affine.txt")
+        if outDirPath != "":
+            imgWrite(inImg, stepDirPath+"in.img")
+            txtWriteList(compositeAffine, stepDirPath+"affine.txt")
 
     # Write final results
-    txtWrite(compositeAffine, outDirPath+"affine.txt")
-    imgWrite(inImg, outDirPath+"out.img")
-    imgWrite(imgChecker(inImg, refImg), outDirPath+"checker.img")
-
-    # Clean up if necessary
-    if useTempDir: shutil.rmtree(outDirPath)
+    if outDirPath != "":
+        txtWrite(compositeAffine, outDirPath+"affine.txt")
+        imgWrite(inImg, outDirPath+"out.img")
+        imgWrite(imgChecker(inImg, refImg), outDirPath+"checker.img")
     
     return compositeAffine    
 
@@ -592,6 +706,7 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
         outDirPath = tempfile.mkdtemp() + "/"
     else:
         outDirPath = dirMake(outDirPath)
+
     inPath = outDirPath + "in.img"
     imgWrite(inImg, inPath)
     refPath = outDirPath + "ref.img"
@@ -621,13 +736,15 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
     """
     Performs Metamorphic LDDMM between input and reference images
     """
+    if outDirPath != "": outDirPath = dirMake(outDirPath)
+    """
     useTempDir = False
     if outDirPath == "":
         useTempDir = True
         outDirPath = tempfile.mkdtemp() + "/"
     else:
         outDirPath = dirMake(outDirPath)
-
+    """
     if isNumber(alphaList): alphaList = [float(alphaList)]
     if isNumber(betaList): betaList = [float(betaList)]
     if isNumber(scaleList): scaleList = [float(scaleList)]
@@ -678,33 +795,26 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
             compositeField = fieldApplyField(field, compositeField)
             compositeInvField = fieldApplyField(compositeInvField, invField)
 
-            fieldPath = stepDirPath+"field.vtk"
-            imgWrite(compositeField, fieldPath)
-
-            invFieldPath = stepDirPath+"invField.vtk"
-            imgWrite(compositeInvField, invFieldPath)
+            if outDirPath != "":
+                fieldPath = stepDirPath+"field.vtk"
+                invFieldPath = stepDirPath+"invField.vtk"
+                imgWrite(compositeInvField, invFieldPath)
+                imgWrite(compositeField, fieldPath)
 
         inImg = imgApplyField(origInImg, compositeField, size=refImg.GetSize())
 
 
     # Write final results
-    imgWrite(compositeField, outDirPath+"field.vtk")
-    imgWrite(compositeInvField, outDirPath+"invField.vtk")
-    imgWrite(inImg, outDirPath+"out.img")
-    imgWrite(imgChecker(inImg,refImg), outDirPath+"checker.img")
-
-    # Clean up if necessary
-    if useTempDir: shutil.rmtree(outDirPath)
+    if outDirPath != "":
+        imgWrite(compositeField, outDirPath+"field.vtk")
+        imgWrite(compositeInvField, outDirPath+"invField.vtk")
+        imgWrite(inImg, outDirPath+"out.img")
+        imgWrite(imgChecker(inImg,refImg), outDirPath+"checker.img")
     
     return (compositeField, compositeInvField)
 
 def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000, useMI=False, verbose=False, outDirPath=""):
-    useTempDir = False
-    if outDirPath == "":
-        useTempDir = True
-        outDirPath = tempfile.mkdtemp() + "/"
-    else:
-        outDirPath = dirMake(outDirPath)
+    if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     initialDirPath = outDirPath + "0_initial/"
     affineDirPath = outDirPath + "1_affine/"
@@ -720,8 +830,9 @@ def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000,
     if not useMI: inImg = imgHM(inImg, refImg)
     initialInImg = inImg
 
-    imgWrite(inImg, initialDirPath+"in.img")
-    imgWrite(refImg, initialDirPath+"ref.img")
+    if outDirPath != "":
+        imgWrite(inImg, initialDirPath+"in.img")
+        imgWrite(refImg, initialDirPath+"ref.img")
 
     if(verbose): print("Affine alignment")    
     affine = imgAffineComposite(inImg, refImg, useMI=useMI, iterations=iterations, verbose=verbose, outDirPath=affineDirPath)
@@ -729,7 +840,9 @@ def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000,
     invAffine = affineInverse(affine)
     invAffineField = affineToField(invAffine, inImg.GetSize(), inImg.GetSpacing())
     inImg = imgApplyField(initialInImg, affineField, size=refImg.GetSize())
-    imgWrite(inImg, affineDirPath+"in.img")
+
+    if outDirPath != "":
+        imgWrite(inImg, affineDirPath+"in.img")
 
     # Deformably align in and ref images
     if(verbose): print("Deformable alignment")
@@ -738,10 +851,10 @@ def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000,
     invField = fieldApplyField(invAffineField, invField)
     inImg = imgApplyField(initialInImg, field, size=refImg.GetSize())
 
-    imgWrite(field, lddmmDirPath+"field.vtk")
-    imgWrite(invField, lddmmDirPath+"invField.vtk")
-    imgWrite(inImg, lddmmDirPath+"in.img")    
-    imgWrite(imgChecker(inImg, refImg), lddmmDirPath+"checker.img")
+    if outDirPath != "":
+        imgWrite(field, lddmmDirPath+"field.vtk")
+        imgWrite(invField, lddmmDirPath+"invField.vtk")
+        imgWrite(inImg, lddmmDirPath+"in.img")    
+        imgWrite(imgChecker(inImg, refImg), lddmmDirPath+"checker.img")
 
-    if useTempDir: shutil.rmtree(outDirPath)
     return (field, invField)
