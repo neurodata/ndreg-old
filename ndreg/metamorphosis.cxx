@@ -1,4 +1,3 @@
-#include "itkDebug.h"
 #include <iomanip>   // setprecision()
 #include <algorithm> // min(), max()
 #include "itkNumericTraits.h"
