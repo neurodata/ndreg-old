@@ -21,6 +21,18 @@ ndToSitkDataTypes = {'uint8': sitk.sitkUInt8,
                      'uint32': sitk.sitkUInt32,
                      'float32': sitk.sitkFloat32}
 
+
+sitkToNpDataTypes = {sitk.sitkUInt8: np.uint8,
+                     sitk.sitkUInt16: np.uint16,
+                     sitk.sitkUInt32: np.uint32,
+                     sitk.sitkInt8: np.int8,
+                     sitk.sitkInt16: np.int16,
+                     sitk.sitkInt32: np.int32,
+                     sitk.sitkFloat32: np.float32,
+                     sitk.sitkFloat64: np.float64,
+                     }
+
+
 ndregDirPath = os.path.dirname(os.path.realpath(__file__))+"/"
 ndregTranslation = 0
 ndregRigid = 1
@@ -97,13 +109,14 @@ def imgRead(path):
     Alias for sitk.ReadImage
     """
     inImg = sitk.ReadImage(path)
+    if(inImg.GetDimension() == 2): inImg = sitk.JoinSeriesImageFilter().Execute(inImg)
     inImg.SetDirection(identityDirection)
     inImg.SetOrigin(zeroOrigin)
 
     return inImg
 
 
-def imgDownload(token, channel="", resolution=0, server="openconnecto.me"):
+def imgDownload(token, channel="", resolution=0, server="openconnecto.me", size=[]):
     """
     Download image with given token from given server at given resolution.
     If channel isn't specified the first channel is downloaded.
@@ -126,7 +139,7 @@ def imgDownload(token, channel="", resolution=0, server="openconnecto.me"):
     spacingNm = metadata[u'dataset'][u'voxelres'][unicode(str(resolution))] # Returns spacing in nanometers 
     spacing = [x * 1e-6 for x in spacingNm] # Convert spacing to mm
 
-    size = nd.get_image_size(token, resolution)
+    if size == []: size = nd.get_image_size(token, resolution)
     offset = nd.get_image_offset(token, resolution)
     dataType = metadata['channels'][channel]['datatype']
 
@@ -148,6 +161,10 @@ def limsGetMetadata(token):
     nd = neurodata()
     r = requests.get(nd.meta_url("metadata/ocp/get/" + token))
     return r.json()
+
+def projGetMetadata(token):
+    nd = neurodata()
+    return nd.get_proj_info(token)
 
 def limsSetMetadata(token, metadata):
     nd = neurodata()
@@ -263,17 +280,47 @@ def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolut
 
     return inImg
 
+def imgPostprocess(inImg, refToken, outToken, useNearest=False, verbose=False, outDirPath=""):
+    if outDirPath != "": outDirPath = dirMake(outDirPath)
 
-def imgUpload(img, token, channel="", resolution=0, server="openconnecto.me"):
+    refLimsMetadata = limsGetMetadata(refToken)
+    refOrient = refLimsMetadata["orientation"]
+
+    outProjMetadata = projGetMetadata(outToken)
+    inToken = outProjMetadata["dataset"]["name"] 
+    inLimsMetadata = limsGetMetadata(inToken)
+    inOrient = inLimsMetadata["orientation"]
+    
+
+    if verbose: print("Reorienting image")
+    inImg = imgReorient(inImg, refOrient, inOrient)
+    if outDirPath !="": imgWrite(inImg, outDirPath+"0_reorient/in.img")
+
+    if verbose: print("Resampling image")    
+    nd = neurodata()
+    outResolution = 5
+    outSpacing = inLimsMetadata["spacing"]
+    outSize = list(np.array(nd.get_image_size(outToken, outResolution)) - np.array(nd.get_image_offset(outToken, outResolution)))    
+
+    for i in range(dimension-1): outSpacing[i] *= 2**outResolution
+    if outProjMetadata["dataset"]["scaling"] != "zslices": outSpacing[dimension-1] *= 2**outResolution
+
+    inImg = imgResample(inImg, spacing=outSpacing, size=outSize, useNearestNeighborInterpolation=useNearest)
+    imgWrite(inImg, outDirPath+"1_resample/in.img")
+    
+    if verbose: print("Uploading results")
+    outChannel = "annotation"
+    imgUpload(inImg, outToken, channel=outChannel, resolution=outResolution, propagate=True)    
+
+
+def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server="openconnecto.me", propagate=False):
     """
     Upload image with given token from given server at given resolution.
     If channel isn't specified image is uploaded to default channel
-    
-    TODO: Check bounds
     """
     # Create neurodata instance
     nd = neurodata()
-    nd.hostname = server
+    nd.hostname = server        
 
     # If channel isn't specified use first one
     channelList = nd.get_channels(token).keys()
@@ -283,6 +330,47 @@ def imgUpload(img, token, channel="", resolution=0, server="openconnecto.me"):
         channel = channelList[0]
     elif not(channel in channelList):
         raise Exception("Channel '{0}' does not exist for given token.".format(channel))
+
+
+    # Convert with RGB or RGBA multi-component images to uint32
+    numComponents = img.GetNumberOfComponentsPerPixel()
+    if numComponents in [3,4]:
+        for component in range(numComponents):
+            #  Extract component
+            caster = sitk.VectorIndexSelectionCastImageFilter()
+            caster.SetIndex(component)
+            componentImg = caster.Execute(img)
+
+            # Scale intensity to 8-bit range
+            componentDatatype = sitkToNpDataTypes[componentImg.GetPixelID()]
+            
+            componentMin = np.iinfo(componentDatatype).min
+            componentMax = np.iinfo(componentDatatype).max
+            componentImg = sitk.IntensityWindowingImageFilter().Execute(componentImg, componentMin, componentMax, 0, 255)
+            componentImg = sitk.Cast(componentImg, sitk.sitkUInt32)
+
+            # Create RGBA image with red component in lowest order byte followed by green and blue (and alpha)
+            if component == 0:
+                uint32Img = componentImg * 256**component
+            else:
+                uint32Img += componentImg * 256**component
+
+        # Fill alpha byte if no alpha component was given
+        if numComponents == 3: uint32Img += 255*256**3
+        img = uint32Img
+
+    elif numComponents == 2 or numComponents > 4:
+        raise Exception("Error: Expected scaler, RGB or RGBA image")
+
+    # Get image size from server
+    offset = nd.get_image_offset(token, resolution)
+        
+    serverSize = list(np.array(nd.get_image_size(token, resolution)) - np.array(offset))    
+    imgSize = img.GetSize()
+
+    # Raise exception if input image is too big 
+    for i in range(dimension):
+        if imgSize[i] > serverSize[i]: raise Exception("Input image with size {0} excedes bounds of token {1} with size {2}".format(imgSize, token, datasetSize))
 
     # Get image data type from server
     metadata = nd.get_proj_info(token)
@@ -295,7 +383,10 @@ def imgUpload(img, token, channel="", resolution=0, server="openconnecto.me"):
     array = sitk.GetArrayFromImage(castImg).transpose(range(dimension-1,-1,-1))
 
     # Upload all image data from specified channel
-    nd.post_cutout(token, channel, 0, 0, 0, data=array, resolution=resolution)
+    nd.post_cutout(token, channel, offset[0]+start[0], offset[1]+start[1], offset[2]+start[2], data=array, resolution=resolution)
+
+    # Propagate
+    if propagate: nd.propagate(token, channel)
 
 def imgWrite(img, path):
     """
@@ -361,6 +452,31 @@ def imgLargestMaskObject(maskImg):
     outImg = sitk.GetImageFromArray((labelArray==largestLabel).astype(np.int16))
     outImg.CopyInformation(maskImg) # output image should have same metadata as input mask image
     return outImg
+
+def imgMakeRGBA(imgList, dtype=sitk.sitkUInt8):
+    if len(imgList) < 3 or len(imgList) > 4: raise Exception("imgList must contain 3 ([r,g,b]) or 4 ([r,g,b,a]) channels.")
+    
+    inDatatype = sitkToNpDataTypes[imgList[0].GetPixelID()]
+    outDatatype = sitkToNpDataTypes[dtype]
+    inMin = np.iinfo(inDatatype).min
+    inMax = np.iinfo(inDatatype).max
+    outMin = np.iinfo(outDatatype).min
+    outMax = np.iinfo(outDatatype).max
+
+    castImgList = []
+    for img in imgList:
+        castImg = sitk.Cast(sitk.IntensityWindowingImageFilter().Execute(img, inMin, inMax, outMin, outMax), dtype)
+        castImgList.append(castImg)
+
+    if len(imgList) == 3:        
+        channelSize = list(imgList[0].GetSize())
+        alphaArray = outMax*np.ones(channelSize[::-1], dtype=outDatatype)
+        alphaChannel = sitk.GetImageFromArray(alphaArray)
+        alphaChannel.CopyInformation(imgList[0])
+        castImgList.append(alphaChannel)
+
+    return sitk.ComposeImageFilter().Execute(castImgList)
+
 
 def imgMakeMask(inImg, threshold=None, forgroundValue=1):
     """
@@ -622,10 +738,15 @@ def imgChecker(inImg, refImg, useHM=True):
 
     return sitk.CheckerBoardImageFilter().Execute(inImg, refImg,[4]*dimension)
 
-def imgAffine(inImg, refImg, method=ndregAffine, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False):
+def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False):
     """
     Perform Affine Registration between input image and reference image
     """
+    # Rescale images
+    refSpacing = refImg.GetSpacing()
+    spacing = [x / scale for x in refSpacing]
+    inImg = imgResample(inImg, spacing, useNearestNeighborInterpolation=useNearestNeighborInterpolation)
+    refImg = imgResample(refImg, spacing, useNearestNeighborInterpolation=useNearestNeighborInterpolation)
 
     # Set interpolator
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearestNeighborInterpolation]
@@ -664,7 +785,7 @@ def imgAffine(inImg, refImg, method=ndregAffine, useNearestNeighborInterpolation
 
     return affine
 
-def imgAffineComposite(inImg, refImg, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False, outDirPath=""):
+def imgAffineComposite(inImg, refImg, scale=1.0, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False, outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     origInImg = inImg
@@ -676,7 +797,7 @@ def imgAffineComposite(inImg, refImg, useNearestNeighborInterpolation=False, use
         dirMake(stepDirPath)
         if(verbose): print("Step {0}:".format(methodName))
 
-        affine = imgAffine(inImg, refImg, method=method, useNearestNeighborInterpolation=useNearestNeighborInterpolation, useMI=useMI, iterations=iterations, verbose=verbose)
+        affine = imgAffine(inImg, refImg, method=method, scale=scale, useNearestNeighborInterpolation=useNearestNeighborInterpolation, useMI=useMI, iterations=iterations, verbose=verbose)
 
         if step == 0:
             compositeAffine = affine
@@ -813,7 +934,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
     
     return (compositeField, compositeInvField)
 
-def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000, useMI=False, verbose=False, outDirPath=""):
+def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1.0], lddmmAlphaList=[0.02], iterations=1000, useMI=False, useNearest=True, verbose=False, outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     initialDirPath = outDirPath + "0_initial/"
@@ -825,8 +946,9 @@ def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000,
     # Resample and histogram match in and ref images
     refSpacing = refImg.GetSpacing()
     spacing = [x / scale for x in refSpacing]
-    inImg = imgResample(inImg, spacing)
-    refImg = imgResample(refImg, spacing)    
+    inImg = imgResample(inImg, spacing, useNearestNeighborInterpolation=useNearest)
+    refImg = imgResample(refImg, spacing, useNearestNeighborInterpolation=useNearest)
+
     if not useMI: inImg = imgHM(inImg, refImg)
     initialInImg = inImg
 
@@ -835,7 +957,7 @@ def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000,
         imgWrite(refImg, initialDirPath+"ref.img")
 
     if(verbose): print("Affine alignment")    
-    affine = imgAffineComposite(inImg, refImg, useMI=useMI, iterations=iterations, verbose=verbose, outDirPath=affineDirPath)
+    affine = imgAffineComposite(inImg, refImg, scale=affineScale, useMI=useMI, iterations=iterations, verbose=verbose, outDirPath=affineDirPath)
     affineField = affineToField(affine, refImg.GetSize(), refImg.GetSpacing())
     invAffine = affineInverse(affine)
     invAffineField = affineToField(invAffine, inImg.GetSize(), inImg.GetSpacing())
@@ -846,7 +968,7 @@ def imgRegistration(inImg, refImg, scale=1.0, alphaList=[0.02], iterations=1000,
 
     # Deformably align in and ref images
     if(verbose): print("Deformable alignment")
-    (field, invField) = imgMetamorphosisComposite(inImg, refImg, alphaList=alphaList, scaleList=[1.0], useBias=False, useMI=useMI, verbose=verbose, iterations=iterations, outDirPath=lddmmDirPath)
+    (field, invField) = imgMetamorphosisComposite(inImg, refImg, alphaList=lddmmAlphaList, scaleList=lddmmScaleList, useBias=False, useMI=useMI, verbose=verbose, iterations=iterations, outDirPath=lddmmDirPath)
     field = fieldApplyField(field, affineField)
     invField = fieldApplyField(invAffineField, invField)
     inImg = imgApplyField(initialInImg, field, size=refImg.GetSize())
