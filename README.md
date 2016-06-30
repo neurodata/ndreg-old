@@ -3,7 +3,7 @@ NeuroData's registration library, built in python using ITK
 
 Submit bug reports [here](https://github.com/openconnectome/ndreg/issues/new).
 
-## Installation (On Ubuntu 14.04)
+## Installation (On Ubuntu 16.04 and later)
 ```bash
 sudo apt-get install cmake python-numpy libinsighttoolkit4-dev libfftw3-dev # Install dependencies
 git clone https://github.com/neurodata/ndreg.git

@@ -310,7 +310,7 @@ def imgPostprocess(inImg, refToken, outToken, useNearest=False, verbose=False, o
     
     if verbose: print("Uploading results")
     outChannel = "annotation"
-    imgUpload(inImg, outToken, channel=outChannel, resolution=outResolution, propagate=True)    
+    imgUpload(inImg, outToken, channel=outChannel, resolution=outResolution)    
 
 
 def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server="openconnecto.me", propagate=False):
@@ -785,24 +785,29 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearestNeighborIn
 
     return affine
 
-def imgAffineComposite(inImg, refImg, scale=1.0, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False, outDirPath=""):
+def imgAffineComposite(inImg, refImg, scale=1.0, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, inAffine=identityAffine,verbose=False, outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     origInImg = inImg
+    
+    #initilize using input affine
+    compositeAffine = inAffine
+    inImg = imgApplyAffine(origInImg, compositeAffine)
+
+    if outDirPath != "":
+        imgWrite(inImg, outDirPath+"0_initial/in.img")
+        txtWriteList(compositeAffine, outDirPath+"0_initial/affine.txt")
+
     methodList = [ndregTranslation, ndregRigid, ndregAffine]
     methodNameList = ["translation", "rigid", "affine"]
     for (step, method) in enumerate(methodList):
         methodName = methodNameList[step]
-        stepDirPath = outDirPath + str(step) + "_" + methodName + "/"
+        stepDirPath = outDirPath + str(step+1) + "_" + methodName + "/"
         dirMake(stepDirPath)
         if(verbose): print("Step {0}:".format(methodName))
 
         affine = imgAffine(inImg, refImg, method=method, scale=scale, useNearestNeighborInterpolation=useNearestNeighborInterpolation, useMI=useMI, iterations=iterations, verbose=verbose)
-
-        if step == 0:
-            compositeAffine = affine
-        else:
-            compositeAffine = affineApplyAffine(affine, compositeAffine)
+        compositeAffine = affineApplyAffine(affine, compositeAffine)
 
         inImg = imgApplyAffine(origInImg, compositeAffine, size=refImg.GetSize())
         if outDirPath != "":
@@ -934,7 +939,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
     
     return (compositeField, compositeInvField)
 
-def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1.0], lddmmAlphaList=[0.02], iterations=1000, useMI=False, useNearest=True, verbose=False, outDirPath=""):
+def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1.0], lddmmAlphaList=[0.02], iterations=1000, useMI=False, useNearest=True, inAffine=identityAffine, verbose=False, outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     initialDirPath = outDirPath + "0_initial/"
@@ -957,7 +962,7 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
         imgWrite(refImg, initialDirPath+"ref.img")
 
     if(verbose): print("Affine alignment")    
-    affine = imgAffineComposite(inImg, refImg, scale=affineScale, useMI=useMI, iterations=iterations, verbose=verbose, outDirPath=affineDirPath)
+    affine = imgAffineComposite(inImg, refImg, scale=affineScale, useMI=useMI, iterations=iterations, inAffine=inAffine, verbose=verbose, outDirPath=affineDirPath)
     affineField = affineToField(affine, refImg.GetSize(), refImg.GetSpacing())
     invAffine = affineInverse(affine)
     invAffineField = affineToField(invAffine, inImg.GetSize(), inImg.GetSpacing())
