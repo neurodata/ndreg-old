@@ -313,7 +313,7 @@ def imgPostprocess(inImg, refToken, outToken, useNearest=False, verbose=False, o
     imgUpload(inImg, outToken, channel=outChannel, resolution=outResolution)    
 
 
-def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server="openconnecto.me", propagate=False):
+def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server="openconnecto.me",  propagate=False):
     """
     Upload image with given token from given server at given resolution.
     If channel isn't specified image is uploaded to default channel
@@ -717,7 +717,7 @@ def imgReorient(inImg, inOrient, outOrient):
 
     return outImg
 
-def imgChecker(inImg, refImg, useHM=True):
+def imgChecker(inImg, refImg, useHM=True, pattern=[4]*dimension):
     """
     Checkerboards input image with reference image
     """    
@@ -736,7 +736,7 @@ def imgChecker(inImg, refImg, useHM=True):
         numMatchPoints = 8
         inImg = sitk.HistogramMatchingImageFilter().Execute(inImg, refImg, numBins, numMatchPoints, False)
 
-    return sitk.CheckerBoardImageFilter().Execute(inImg, refImg,[4]*dimension)
+    return sitk.CheckerBoardImageFilter().Execute(inImg, refImg,pattern)
 
 def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False):
     """
@@ -765,10 +765,11 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearestNeighborIn
     if useMI:
         numHistogramBins = 64
         registration.SetMetricAsMattesMutualInformation(numHistogramBins)
-        learningRate=0.1
+ 
     else:
         registration.SetMetricAsMeanSquares()
-        learningRate=0.000001
+
+    learningRate=0.1
     registration.SetOptimizerAsRegularStepGradientDescent(learningRate=learningRate, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
     if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1} \t{2}".format(registration.GetOptimizerIteration(),registration.GetMetricValue(), registration.GetOptimizerLearningRate())))
                     
@@ -822,7 +823,7 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearestNeighborInterpolation
     
     return compositeAffine    
 
-def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=True, useMI=False, verbose=True, outDirPath=""):
+def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=False, useMI=False, verbose=True, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
     """

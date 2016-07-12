@@ -142,10 +142,12 @@ public:
   // Filter typedefs
   typedef typename MetricTraits::FixedImageGradientFilterType  FixedImageGradientFilterType;
   typedef typename FixedImageGradientFilterType::Pointer       FixedImageGradientFilterPointer;
+  typedef GradientImageFilter<FixedImageType, double, double>  DefaultFixedImageGradientFilterType;
   typedef ConstantImageFilter<VirtualImageType, typename ImageMetricType::FixedImageGradientImageType> FixedImageConstantGradientFilterType;
-  
+
   typedef typename MetricTraits::MovingImageGradientFilterType MovingImageGradientFilterType;
   typedef typename MovingImageGradientFilterType::Pointer      MovingImageGradientFilterPointer;
+  typedef GradientImageFilter<MovingImageType, double, double> DefaultMovingImageGradientFilterType;
   typedef ConstantImageFilter<VirtualImageType, typename ImageMetricType::MovingImageGradientImageType> MovingImageConstantGradientFilterType;
 
   /** Public member functions */
@@ -233,8 +235,6 @@ private:
   TimeVaryingImagePointer m_Rate;
   VirtualImagePointer m_Bias;
 
-  MovingImageGradientFilterPointer m_MovingImageGradientFilter;
-  FixedImageGradientFilterPointer  m_FixedImageGradientFilter;
   typename MovingImageConstantGradientFilterType::Pointer m_MovingImageConstantGradientFilter;
   typename FixedImageConstantGradientFilterType::Pointer  m_FixedImageConstantGradientFilter;
 

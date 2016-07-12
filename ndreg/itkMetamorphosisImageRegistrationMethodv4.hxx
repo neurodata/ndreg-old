@@ -36,9 +36,6 @@ MetamorphosisImageRegistrationMethodv4()
   m_Bias = VirtualImageType::New();                              // B
   m_VirtualImage = VirtualImageType::New();
 
-  m_FixedImageGradientFilter = GradientImageFilter<FixedImageType, double, double>::New();
-  m_MovingImageGradientFilter = GradientImageFilter<MovingImageType, double, double>::New();
-
   typedef typename ImageMetricType::FixedImageGradientImageType::PixelType             FixedGradientPixelType;
   m_FixedImageConstantGradientFilter = FixedImageConstantGradientFilterType::New();
   m_FixedImageConstantGradientFilter->SetConstant(NumericTraits<FixedGradientPixelType>::One);
@@ -344,8 +341,8 @@ GetImageEnergy(VirtualImagePointer movingImage)
   ImageMetricPointer metric = dynamic_cast<ImageMetricType *>(this->m_Metric.GetPointer()); 
   metric->SetFixedImage(this->GetFixedImage());        // I_1
   metric->SetMovingImage(caster->GetOutput());
-  metric->SetFixedImageGradientFilter(m_FixedImageGradientFilter);
-  metric->SetMovingImageGradientFilter(m_MovingImageGradientFilter);
+  metric->SetFixedImageGradientFilter(DefaultFixedImageGradientFilterType::New());
+  metric->SetMovingImageGradientFilter(DefaultMovingImageGradientFilterType::New());
   metric->SetVirtualDomainFromImage(m_VirtualImage);
   metric->Initialize();
   
@@ -356,7 +353,7 @@ template<typename TFixedImage, typename TMovingImage>
 double
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
 GetImageEnergy()
-{  
+{ 
   return GetImageEnergy(m_ForwardImage); // I(1)
 }
 
@@ -464,8 +461,8 @@ GetMetricDerivative(FieldPointer field, bool initializeMetric = true, bool useIm
 
   if(useImageGradients)
   {
-    fixedImageGradientFilter = m_FixedImageGradientFilter; // \nabla I_1
-    movingImageGradientFilter = m_MovingImageGradientFilter; // \nabla I_0
+    fixedImageGradientFilter = DefaultFixedImageGradientFilterType::New(); // \nabla I_1
+    movingImageGradientFilter = DefaultMovingImageGradientFilterType::New(); // \nabla I_0
   }
   else
   {
