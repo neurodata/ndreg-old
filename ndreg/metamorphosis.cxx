@@ -1,5 +1,6 @@
 #include <iomanip>   // setprecision()
 #include <algorithm> // min(), max()
+#include "itkImageMaskSpatialObject.h"
 #include "itkNumericTraits.h"
 #include "itkCommand.h"
 #include "itkTimeProbe.h"
@@ -35,6 +36,8 @@ int main(int argc, char* argv[])
   {
     cerr<<"Usage:"<<endl;
     cerr<<"\t"<<argv[0]<<" --in InputPath --ref ReferencePath --out OutputPath"<<endl;
+    cerr<<"\t\t[ --inmask inMaskPath"<<endl;
+    cerr<<"\t\t[ --refmask refMaskPath"<<endl;
     cerr<<"\t\t[ --field OutputDisplacementFieldPath"<<endl;
     cerr<<"\t\t  --invfield OutputInverseDisplacementFieldPath"<<endl;
     cerr<<"\t\t  --bias OutputBiasPath"<<endl;
@@ -142,8 +145,62 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   // Set input (moving) image
   metamorphosis->SetMovingImage(movingImage); // I_0
 
+  // Read input (moving) mask
+  itkStaticConstMacro(ImageDimension, unsigned int, ImageType::ImageDimension);
+  typedef itk::ImageMaskSpatialObject<ImageDimension>  MaskType;
+  typedef typename MaskType::ImageType                 MaskImageType;
+  typedef itk::ImageFileReader<MaskImageType>          MaskReaderType;
+  typename MaskType::Pointer movingMask;
+
+  string inputMaskPath;
+  parser->GetCommandLineArgument("--inmask", inputMaskPath);
+  if(inputMaskPath != "")
+  {
+    
+    typename MaskReaderType::Pointer inputMaskReader = MaskReaderType::New();
+    inputMaskReader->SetFileName(inputMaskPath);
+    try
+    {
+      inputMaskReader->Update();
+    }
+    catch(itk::ExceptionObject& exceptionObject)
+    {
+      cerr<<"Error: Could not read input mask image: "<<inputMaskPath<<endl;
+      cerr<<exceptionObject<<endl;
+      return EXIT_FAILURE;
+    }
+
+    movingMask = MaskType::New();
+    movingMask->SetImage(inputMaskReader->GetOutput());
+
+  }
+
   // Set reference (fixed) image
   metamorphosis->SetFixedImage(fixedImage);   // I_1
+
+  // Read reference (fixed) mask
+  typename MaskType::Pointer fixedMask;
+  string referenceMaskPath;
+  parser->GetCommandLineArgument("--refmask", referenceMaskPath);
+
+  if(referenceMaskPath != "")
+  {
+    typename MaskReaderType::Pointer referenceMaskReader = MaskReaderType::New();
+    referenceMaskReader->SetFileName(referenceMaskPath);
+    try
+    {
+      referenceMaskReader->Update();
+    }
+    catch(itk::ExceptionObject& exceptionObject)
+    {
+      cerr<<"Error: Could not read reference mask image: "<<referenceMaskPath<<endl;
+      cerr<<exceptionObject<<endl;
+      return EXIT_FAILURE;
+    }
+
+    fixedMask = MaskType::New();
+    fixedMask->SetImage(referenceMaskReader->GetOutput());
+  }
 
   // Set metamorphosis parameters 
   if(parser->ArgumentExists("--scale"))
@@ -224,7 +281,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   {
     unsigned int costFunction;
     parser->GetCommandLineArgument("--cost", costFunction);
-    
+
     switch(costFunction)
     {
       case 1:
@@ -232,6 +289,9 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
         typedef itk::MattesMutualInformationImageToImageMetricv4<ImageType, ImageType> MetricType;
         typename MetricType::Pointer metric = MetricType::New();
         metric->SetNumberOfHistogramBins(32);
+        metric->SetFixedImageMask(fixedMask);
+        metric->SetMovingImageMask(movingMask);
+
         metamorphosis->SetMetric(metric);
         metamorphosis->SetSigma(0.0001);
         break;
@@ -240,10 +300,14 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
       {
         typedef itk::MeanSquaresImageToImageMetricv4<ImageType, ImageType> MetricType;
         typename MetricType::Pointer metric = MetricType::New();
+        metric->SetFixedImageMask(fixedMask);
+        metric->SetMovingImageMask(movingMask);
+
         metamorphosis->SetMetric(metric);
         metamorphosis->SetSigma(1.0);
       }
-    }
+    } 
+    
   }
 
   if(parser->ArgumentExists("--sigma"))
@@ -262,7 +326,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   }
   catch(itk::ExceptionObject& exceptionObject)
   {
-    cerr<<"Error: Metamorphsis did not terminate normally."<<endl;
+    cerr<<"Error: Metamorphosis did not terminate normally."<<endl;
     cerr<<exceptionObject<<endl;
     return EXIT_FAILURE;
   }
@@ -300,7 +364,6 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   adder->Update();
 
   // Limit intensity of I(1) to intensity range of ouput image type
-  itkStaticConstMacro(ImageDimension, unsigned int, ImageType::ImageDimension);
   typedef unsigned char   OutputPixelType;
   typedef itk::Image<OutputPixelType,ImageDimension>  OutputImageType;
 
@@ -331,7 +394,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     returnValue = EXIT_FAILURE;
   }
 
-  // Write checker board of input and output image
+  // Write checker board of reference and output image
   string checkerPath;
   parser->GetCommandLineArgument("--checker", checkerPath);
   if(checkerPath != "")

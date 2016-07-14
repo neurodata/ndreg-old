@@ -19,6 +19,8 @@
 #include "itkJoinSeriesImageFilter.h"
 #include "itkExtractImageFilter.h"
 #include "itkWrapExtrapolateImageFunction.h"
+#include "itkNearestNeighborInterpolateImageFunction.h"
+#include "itkSpatialObjectToImageFilter.h"
 
 namespace itk
 {
@@ -115,7 +117,13 @@ public:
   typedef typename Superclass::VirtualImageType     VirtualImageType;
   typedef typename VirtualImageType::Pointer        VirtualImagePointer;
   typedef typename VirtualImageType::PixelType      VirtualPixelType;
-  
+
+  typedef Image<unsigned char, ImageDimension>      MaskImageType;
+  typedef typename MaskImageType::Pointer           MaskImagePointer;
+  typedef itk::ImageMaskSpatialObject<ImageDimension>        MaskType;  
+  typedef typename MaskType::Pointer                MaskPointer;
+  typedef typename MaskType::ConstPointer           MaskConstPointer;
+
   typedef VirtualImageType                          BiasImageType;
   typedef typename BiasImageType::Pointer           BiasImagePointer;
 
@@ -180,7 +188,7 @@ public:
 
   double GetVelocityEnergy();
   double GetRateEnergy();
-  double GetImageEnergy(VirtualImagePointer movingImage);
+  double GetImageEnergy(VirtualImagePointer movingImage, MaskPointer movingMask);
   double GetImageEnergy();
   double GetImageEnergyFraction();
   double GetEnergy();
@@ -225,9 +233,11 @@ private:
   double m_Energy;
   bool m_RecalculateEnergy;
   bool m_IsConverged;
-
   VirtualImagePointer m_VirtualImage;
   VirtualImagePointer m_ForwardImage;
+  MaskImagePointer    m_MovingMaskImage;
+  MaskImagePointer    m_ForwardMaskImage;
+
   TimeVaryingImagePointer m_VelocityKernel;
   TimeVaryingImagePointer m_InverseVelocityKernel;
   TimeVaryingImagePointer m_RateKernel;

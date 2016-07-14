@@ -249,6 +249,50 @@ Initialize()
   movingCaster->Update();
   m_ForwardImage = movingCaster->GetOutput();
 
+  // Initialize forward mask M(1)
+  ImageMetricPointer metric = dynamic_cast<ImageMetricType *>(this->m_Metric.GetPointer()); 
+  typedef SpatialObjectToImageFilter<MaskType, MaskImageType> MaskToImageType;
+  if(metric->GetMovingImageMask())
+  {
+    typename MaskToImageType::Pointer maskToImage = MaskToImageType::New();
+    maskToImage->SetInput(dynamic_cast<const MaskType*>(metric->GetMovingImageMask()));
+    maskToImage->SetInsideValue(1);
+    maskToImage->SetOutsideValue(0);
+    maskToImage->SetSpacing(m_ForwardImage->GetSpacing());
+    maskToImage->SetOrigin(m_ForwardImage->GetOrigin());
+    maskToImage->SetDirection(m_ForwardImage->GetDirection());
+    maskToImage->SetSize(m_ForwardImage->GetLargestPossibleRegion().GetSize());
+    maskToImage->Update();
+
+    m_MovingMaskImage = maskToImage->GetOutput(); // M_0
+    
+    typedef ImageDuplicator<MaskImageType> DuplicatorType;
+    typename DuplicatorType::Pointer duplicator = DuplicatorType::New();
+    duplicator->SetInputImage(m_MovingMaskImage);
+    duplicator->Update();
+    
+    m_ForwardMaskImage = duplicator->GetModifiableOutput(); // M(1) = M_0
+  }
+
+  // Initialize fixed mask M_1
+  MaskPointer fixedMask;
+  if(metric->GetFixedImageMask())
+  {
+    // Spatial object duplicator not working convert from mask to mask-image and back to mask
+    typename MaskToImageType::Pointer maskToImage = MaskToImageType::New();
+    maskToImage->SetInput(dynamic_cast<const MaskType*>(metric->GetFixedImageMask()));
+    maskToImage->SetInsideValue(1);
+    maskToImage->SetOutsideValue(0);
+    maskToImage->SetSpacing(fixedImage->GetSpacing());
+    maskToImage->SetOrigin(fixedImage->GetOrigin());
+    maskToImage->SetDirection(fixedImage->GetDirection());
+    maskToImage->SetSize(fixedRegion.GetSize());
+    maskToImage->Update();
+
+    fixedMask = MaskType::New();
+    fixedMask->SetImage(maskToImage->GetOutput()); // M_1
+  }
+
   // Initialize velocity kernels, K_V, L_V
   InitializeKernels(m_VelocityKernel,m_InverseVelocityKernel,m_RegistrationSmoothness,m_Gamma);
 
@@ -266,8 +310,8 @@ Initialize()
   typename FixedCasterType::Pointer fixedCaster = FixedCasterType::New();
   fixedCaster->SetInput(this->GetFixedImage());
   fixedCaster->Update();
-
-  m_MinImageEnergy = GetImageEnergy(fixedCaster->GetOutput());
+  
+  m_MinImageEnergy = GetImageEnergy(fixedCaster->GetOutput(), fixedMask);
   m_MaxImageEnergy = GetImageEnergy();
   
   // Disable bias correction if \mu = 0
@@ -331,7 +375,7 @@ GetRateEnergy()
 template<typename TFixedImage, typename TMovingImage>
 double
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
-GetImageEnergy(VirtualImagePointer movingImage)
+GetImageEnergy(VirtualImagePointer movingImage, MaskPointer movingMask=ITK_NULLPTR)
 {    
   typedef CastImageFilter<VirtualImageType, MovingImageType> CasterType;
   typename CasterType::Pointer caster = CasterType::New();
@@ -340,9 +384,10 @@ GetImageEnergy(VirtualImagePointer movingImage)
 
   ImageMetricPointer metric = dynamic_cast<ImageMetricType *>(this->m_Metric.GetPointer()); 
   metric->SetFixedImage(this->GetFixedImage());        // I_1
-  metric->SetMovingImage(caster->GetOutput());
   metric->SetFixedImageGradientFilter(DefaultFixedImageGradientFilterType::New());
+  metric->SetMovingImage(caster->GetOutput());
   metric->SetMovingImageGradientFilter(DefaultMovingImageGradientFilterType::New());
+  metric->SetMovingImageMask(movingMask);
   metric->SetVirtualDomainFromImage(m_VirtualImage);
   metric->Initialize();
   
@@ -354,7 +399,13 @@ double
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
 GetImageEnergy()
 { 
-  return GetImageEnergy(m_ForwardImage); // I(1)
+  MaskPointer forwardMask;
+  if(m_ForwardMaskImage)
+  {
+    forwardMask = MaskType::New();
+    forwardMask->SetImage(m_ForwardMaskImage);
+  }
+  return GetImageEnergy(m_ForwardImage, forwardMask); // I(1)
 }
 
 template<typename TFixedImage, typename TMovingImage>
@@ -480,6 +531,13 @@ GetMetricDerivative(FieldPointer field, bool initializeMetric = true, bool useIm
   caster->SetInput(m_ForwardImage); // I(1)
   caster->Update();
 
+  typename MaskType::Pointer forwardMask;
+  if(m_ForwardMaskImage)
+  {
+    forwardMask = MaskType::New();
+    forwardMask->SetImage(m_ForwardMaskImage);
+  }
+
   ImageMetricPointer metric = dynamic_cast<ImageMetricType*>(this->m_Metric.GetPointer()); 
   metric->SetFixedImage(this->GetFixedImage());                    // I_1
   metric->SetFixedTransform(fieldTransform);                       // \phi_{t1}
@@ -487,7 +545,9 @@ GetMetricDerivative(FieldPointer field, bool initializeMetric = true, bool useIm
   metric->SetMovingImage(caster->GetOutput());                     // I(1)
   metric->SetMovingTransform(fieldTransform);                      // \phi_{t1}
   metric->SetMovingImageGradientFilter(movingImageGradientFilter); // \nabla I_0
+  metric->SetMovingImageMask(forwardMask);
   metric->SetVirtualDomainFromImage(m_VirtualImage);
+
   if(initializeMetric){ metric->Initialize(); }
 
   // Setup metric derivative
@@ -652,7 +712,30 @@ UpdateControls()
     resampler->Update();
 
     m_ForwardImage = resampler->GetOutput();       // I_0 o \phi_{10}
+    
+    // Compute forward mask M(1) = M_0 o \phi{1_0} 
+    if(m_ForwardMaskImage)
+    {
+      typedef NearestNeighborInterpolateImageFunction<MaskImageType, RealType>      MaskInterpolatorType;
+      typename MaskInterpolatorType::Pointer maskInterpolator = MaskInterpolatorType::New();
 
+      typedef WrapExtrapolateImageFunction<MaskImageType, RealType>         MaskExtrapolatorType;
+      typename MaskExtrapolatorType::Pointer maskExtrapolator = MaskExtrapolatorType::New();
+      maskExtrapolator->SetInterpolator(maskInterpolator);
+
+      typedef ResampleImageFilter<MaskImageType,MaskImageType,RealType>  MaskResamplerType;
+      typename MaskResamplerType::Pointer maskResampler = MaskResamplerType::New();
+      maskResampler->SetInput(m_MovingMaskImage);  // M_0
+      maskResampler->SetTransform(transform);      // \phi_{10}
+      maskResampler->UseReferenceImageOn();
+      maskResampler->SetReferenceImage(this->GetFixedImage());
+      maskResampler->SetInterpolator(maskInterpolator);
+      maskResampler->SetExtrapolator(maskExtrapolator);
+      maskResampler->Update();
+
+      m_ForwardMaskImage = maskResampler->GetOutput(); // M_0 o \phi_{10} 
+    }
+    
     if(m_UseBias)
     {
       // Update rate, r = r - \epsilon \nabla_R E
