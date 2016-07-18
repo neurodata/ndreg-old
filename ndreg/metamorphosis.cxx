@@ -69,7 +69,7 @@ int main(int argc, char* argv[])
   string referencePath;
   parser->GetCommandLineArgument("--ref",referencePath);
   typedef itk::ImageFileReader<Image3DType> ReaderType;
-  typename ReaderType::Pointer referenceReader = ReaderType::New();
+  ReaderType::Pointer referenceReader = ReaderType::New();
   referenceReader->SetFileName(referencePath);
   try
   {
@@ -82,7 +82,7 @@ int main(int argc, char* argv[])
     return EXIT_FAILURE;
   }
 
-  typename Image3DType::Pointer referenceImage = referenceReader->GetOutput();
+  Image3DType::Pointer referenceImage = referenceReader->GetOutput();
   Image3DType::DirectionType direction; direction.SetIdentity();
   referenceImage->SetDirection(direction);
 
@@ -288,7 +288,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
       {
         typedef itk::MattesMutualInformationImageToImageMetricv4<ImageType, ImageType> MetricType;
         typename MetricType::Pointer metric = MetricType::New();
-        metric->SetNumberOfHistogramBins(32);
+        metric->SetNumberOfHistogramBins(128);
         metric->SetFixedImageMask(fixedMask);
         metric->SetMovingImageMask(movingMask);
 

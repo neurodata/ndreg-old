@@ -170,7 +170,7 @@ def limsSetMetadata(token, metadata):
     nd = neurodata()
     nd.set_metadata(token, metadata)
 
-def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolution=0, threshold=0, outDirPath="", verbose=True):
+def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolution=0, threshold=0, outDirPath="", doSteps=[1,1,1,1], verbose=True):
     """
     Downloads, resamples and reorients input image to the spacing and orientation of the reference image.
     If threshold > 0 the background is masked out based on the given threshold.
@@ -181,6 +181,7 @@ def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolut
     See documentation of the \"imgReorient\" function for more details on orientation strings.
     """
     if outDirPath != "": outDirPath = dirMake(outDirPath)
+    inMask = None
 
     # Create NeuroData instance
     nd = neurodata()
@@ -223,62 +224,78 @@ def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolut
     inLimsMetadata = limsGetMetadata(inToken)
 
     # Download input image 
-    if verbose: print("Downloading input image")
-    inImg = imgDownload(inToken, channel=inChannel, resolution=inResolution)
+    if doSteps[0]:
+        if verbose: print("Downloading input image")
+        inImg = imgDownload(inToken, channel=inChannel, resolution=inResolution)
 
-    # Check if downloaded image is empty
-    epsilon = sys.float_info.epsilon    
-    stats = sitk.StatisticsImageFilter()
-    stats.Execute(inImg)
+        # Check if downloaded image is empty
+        epsilon = sys.float_info.epsilon    
+        stats = sitk.StatisticsImageFilter()
+        stats.Execute(inImg)
 
-    if (stats.GetMean() < epsilon) and (stats.GetVariance() < epsilon):
-        raise Exception("Error: Input image downoaded from token {0} is empty".format(inToken))
+        if (stats.GetMean() < epsilon) and (stats.GetVariance() < epsilon):
+            raise Exception("Error: Input image downoaded from token {0} is empty".format(inToken))
 
-    inSpacing = inImg.GetSpacing()
+        inSpacing = inImg.GetSpacing()
 
-    # Set input image's spacing based on lims metadata 
-    if 'spacing' in inLimsMetadata.keys():
-        # If lims metadata contains a spacing field then set spacing of downloaded image using it
-        inSpacing = inLimsMetadata['spacing']
+        # Set input image's spacing based on lims metadata 
+        if 'spacing' in inLimsMetadata.keys():
+            # If lims metadata contains a spacing field then set spacing of downloaded image using it
+            inSpacing = inLimsMetadata['spacing']
 
-        # Scale spacing values of input image based on resolution level
-        for i in range(0, dimension-1): inSpacing[i] *= 2**inResolution
-        if inProjMetadata['dataset']['scaling'] != 'zslices': inSpacing[dimension-1] *= 2**inResolution
-        inImg.SetSpacing(inSpacing)
-    else:
-        if verbose: print("Warning: LIMS token {0} does not have an \"spacing\" feild.  Using value of {1} from project token {0}".format(inToken, inSpacing))
+            # Scale spacing values of input image based on resolution level
+            for i in range(0, dimension-1): inSpacing[i] *= 2**inResolution
+            if inProjMetadata['dataset']['scaling'] != 'zslices': inSpacing[dimension-1] *= 2**inResolution
+            inImg.SetSpacing(inSpacing)
+        else:
+            if verbose: print("Warning: LIMS token {0} does not have an \"spacing\" feild.  Using value of {1} from project token {0}".format(inToken, inSpacing))
 
-    if outDirPath != "": imgWrite(inImg,outDirPath+"/0_download/img.img")
+        if outDirPath != "": imgWrite(inImg,outDirPath+"/0_download/img.img")
 
     # Resample input image to spacing of reference image
-    if verbose: print("Resampling input image")
-    inImg = imgResample(inImg, refSpacing)
-    if outDirPath != "": imgWrite(inImg,outDirPath+"/1_resample/img.img")
+    if doSteps[1]:
+        if verbose: print("Resampling input image")
+        inImg = imgRead(outDirPath+"/0_download/img.img")
+        inImg = imgResample(inImg, refSpacing)
+        if outDirPath != "": imgWrite(inImg,outDirPath+"/1_resample/img.img")
 
     # Reorient input image to orientation of reference image
-    if "orientation" in inLimsMetadata.keys():
-        if verbose: print("Reorienting input image")
-        # If lims metadata contains a orientation field then reorient image
-        inOrient = inLimsMetadata["orientation"]
-        inImg = imgReorient(inImg, inOrient, refOrient)
-    else:
-        if verbose: print("Warning: LIMS token {0} does not have an \"orientation\" feild. Could not reorient image.".format(inToken))
+    if doSteps[2]:
+        inImg = imgRead(outDirPath+"/1_resample/img.img")
+        if "orientation" in inLimsMetadata.keys():
+            if verbose: print("Reorienting input image")
+            # If lims metadata contains a orientation field then reorient image
+            inOrient = inLimsMetadata["orientation"]
+            inImg = imgReorient(inImg, inOrient, refOrient)
+        else:
+            if verbose: print("Warning: LIMS token {0} does not have an \"orientation\" feild. Could not reorient image.".format(inToken))
 
-    if outDirPath != "": imgWrite(inImg,outDirPath+"/2_reorient/img.img")
+        if outDirPath != "": imgWrite(inImg,outDirPath+"/2_reorient/img.img")
 
-    if threshold > 0:
-        # Mask out background of input image
+
+    # Mask out background of input image
+    if doSteps[3] and threshold > 0:
         if verbose: print("Masking input image")
-        mask = imgMakeMask(inImg, threshold=threshold)
-        inImg = imgMask(inImg,mask)
+        inImg = imgRead(outDirPath+"/2_reorient/img.img")
+        backgroundValue = 0
+        foregroundValue = 1
+        radius = 10
+        regMask = sitk.BinaryThreshold(inImg, 0, 0, backgroundValue, foregroundValue)
+        regMask = sitk.BinaryErode(regMask, radius, sitk.sitkBox, backgroundValue, foregroundValue, False)
+
+        brainMask = imgMakeMask(inImg, threshold=threshold)
+        inImg = imgMask(inImg,brainMask)
+
+        if outDirPath != "": 
+            imgWrite(inImg, outDirPath+"/3_mask/img.img")
+            imgWrite(regMask, outDirPath+"/3_mask/regMask.img")
+            imgWrite(brainMask, outDirPath+"/3_mask/brainMask.img")
 
     if outDirPath != "": 
-        imgWrite(inImg, outDirPath+"/3_mask/img.img")
-        imgWrite(mask, outDirPath+"/3_mask/mask.img")
-        imgWrite(inImg, outDirPath+"/img.img")
-        imgWrite(mask, outDirPath+"/mask.img")
+        imgWrite(inImg, outDirPath+"/in.img")
+        imgWrite(regMask, outDirPath+"/regMask.img")
 
-    return inImg
+    return (inImg, regMask)
 
 def imgPostprocess(inImg, refToken, outToken, useNearest=False, verbose=False, outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
@@ -738,7 +755,7 @@ def imgChecker(inImg, refImg, useHM=True, pattern=[4]*dimension):
 
     return sitk.CheckerBoardImageFilter().Execute(inImg, refImg,pattern)
 
-def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, verbose=False):
+def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, inMask=None, refMask=None, verbose=False):
     """
     Perform Affine Registration between input image and reference image
     """
@@ -747,6 +764,8 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearestNeighborIn
     spacing = [x / scale for x in refSpacing]
     inImg = imgResample(inImg, spacing, useNearestNeighborInterpolation=useNearestNeighborInterpolation)
     refImg = imgResample(refImg, spacing, useNearestNeighborInterpolation=useNearestNeighborInterpolation)
+    if(inMask): imgResample(inMask, spacing, useNearestNeighborInterpolation=False)
+    if(refMask): imgResample(refMask, spacing, useNearestNeighborInterpolation=False)
 
     # Set interpolator
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearestNeighborInterpolation]
@@ -762,6 +781,9 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearestNeighborIn
     registration.SetInterpolator(interpolator)
     registration.SetInitialTransform(transform)
 
+    if(inMask): registration.SetMetricMovingMask(inMask)
+    if(refMask): registration.SetMetricFixedMask(refMask)
+    
     if useMI:
         numHistogramBins = 64
         registration.SetMetricAsMattesMutualInformation(numHistogramBins)
@@ -786,17 +808,21 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearestNeighborIn
 
     return affine
 
-def imgAffineComposite(inImg, refImg, scale=1.0, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, inAffine=identityAffine,verbose=False, outDirPath=""):
+def imgAffineComposite(inImg, refImg, scale=1.0, useNearestNeighborInterpolation=False, useMI=False, iterations=1000, inAffine=identityAffine,verbose=False, inMask=None, refMask=None, outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     origInImg = inImg
-    
+    origInMask = inMask
+    origRefMask = refMask
+
     #initilize using input affine
     compositeAffine = inAffine
     inImg = imgApplyAffine(origInImg, compositeAffine)
+    if(inMask): inMask = imgApplyAffine(origInMask, compositeAffine, useNearest=True)
 
     if outDirPath != "":
         imgWrite(inImg, outDirPath+"0_initial/in.img")
+        if(inMask): imgWrite(inMask, outDirPath+"0_initial/inMask.img")
         txtWriteList(compositeAffine, outDirPath+"0_initial/affine.txt")
 
     methodList = [ndregTranslation, ndregRigid, ndregAffine]
@@ -807,12 +833,15 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearestNeighborInterpolation
         dirMake(stepDirPath)
         if(verbose): print("Step {0}:".format(methodName))
 
-        affine = imgAffine(inImg, refImg, method=method, scale=scale, useNearestNeighborInterpolation=useNearestNeighborInterpolation, useMI=useMI, iterations=iterations, verbose=verbose)
+        affine = imgAffine(inImg, refImg, method=method, scale=scale, useNearestNeighborInterpolation=useNearestNeighborInterpolation, useMI=useMI, iterations=iterations, inMask=inMask, refMask=refMask, verbose=verbose)
         compositeAffine = affineApplyAffine(affine, compositeAffine)
 
         inImg = imgApplyAffine(origInImg, compositeAffine, size=refImg.GetSize())
+        if(inMask): inMask = imgApplyAffine(origInMask, compositeAffine, size=refImg.GetSize(), useNearest=False)
+
         if outDirPath != "":
             imgWrite(inImg, stepDirPath+"in.img")
+            if(inMask): imgWrite(inMask, stepDirPath+"inMask.img")
             txtWriteList(compositeAffine, stepDirPath+"affine.txt")
 
     # Write final results
@@ -823,7 +852,7 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearestNeighborInterpolation
     
     return compositeAffine    
 
-def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=False, useMI=False, verbose=True, outDirPath=""):
+def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=False, useMI=False, verbose=True, inMask=None, refMask=None, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
     """
@@ -849,6 +878,16 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
     if(useMI):
         command += " --cost 1 --sigma 1e-4 --epsilon 1e-3"
 
+    if(inMask):
+        inMaskPath = outDirPath + "inMask.img"
+        imgWrite(inMask, inMaskPath)
+        command += " --inmask " + inMaskPath
+
+    if(refMask):
+        refMaskPath = outDirPath + "refMask.img"
+        imgWrite(refMask, refMaskPath)
+        command += " --refmask " + refMaskPath
+
     os.system(command)
     #run(command, quiet=not(verbose))
 
@@ -859,7 +898,7 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
     return (field, invField)
 
 
-def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=True, useMI=False, verbose=True, outDirPath=""):
+def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, useNearestNeighborInterpolation=False, useBias=True, useMI=False, inMask=None, refMask=None, verbose=True, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
     """
@@ -897,13 +936,15 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
             scaleList *= numSteps
 
     origInImg = inImg
+    origInMask = inMask
     for step in range(numSteps):
         alpha = alphaList[step]
         beta = betaList[step]
         scale = scaleList[step]
         stepDirPath = outDirPath + "step" + str(step) + "/"
         if(verbose): print("Step {0}: alpha={1}, beta={2}, scale={3}".format(step,alpha, beta, scale))
-        
+        imgWrite(inMask, stepDirPath+"inMask.img")
+
         (field, invField) = imgMetamorphosis(inImg, refImg, 
                                              alpha, 
                                              beta, 
@@ -912,7 +953,9 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
                                              useNearestNeighborInterpolation, 
                                              useBias, 
                                              useMI, 
-                                             verbose, 
+                                             verbose,
+                                             inMask=inMask,
+                                             refMask=refMask,
                                              outDirPath=stepDirPath)
 
         if step == 0:
@@ -929,7 +972,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
                 imgWrite(compositeField, fieldPath)
 
         inImg = imgApplyField(origInImg, compositeField, size=refImg.GetSize())
-
+        if(inMask): inMask=imgApplyField(origInMask, compositeField, size=refImg.GetSize(), useNearest=True)
 
     # Write final results
     if outDirPath != "":
@@ -940,7 +983,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
     
     return (compositeField, compositeInvField)
 
-def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1.0], lddmmAlphaList=[0.02], iterations=1000, useMI=False, useNearest=True, inAffine=identityAffine, verbose=False, outDirPath=""):
+def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1.0], lddmmAlphaList=[0.02], iterations=1000, useMI=False, useNearest=True, inAffine=identityAffine, inMask=None, refMask=None, verbose=False, outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     initialDirPath = outDirPath + "0_initial/"
@@ -954,27 +997,34 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
     spacing = [x / scale for x in refSpacing]
     inImg = imgResample(inImg, spacing, useNearestNeighborInterpolation=useNearest)
     refImg = imgResample(refImg, spacing, useNearestNeighborInterpolation=useNearest)
+    if(inMask): inMask = imgResample(inMask, spacing, useNearestNeighborInterpolation=True)
+    if(refMask): refMask = imgResample(refMask, spacing, useNearestNeighborInterpolation=True)
 
     if not useMI: inImg = imgHM(inImg, refImg)
     initialInImg = inImg
-
+    initialInMask = inMask
+    initialRefMask = refMask
     if outDirPath != "":
         imgWrite(inImg, initialDirPath+"in.img")
         imgWrite(refImg, initialDirPath+"ref.img")
 
     if(verbose): print("Affine alignment")    
-    affine = imgAffineComposite(inImg, refImg, scale=affineScale, useMI=useMI, iterations=iterations, inAffine=inAffine, verbose=verbose, outDirPath=affineDirPath)
+    affine = imgAffineComposite(inImg, refImg, scale=affineScale, useMI=useMI, iterations=iterations, inAffine=inAffine, verbose=verbose, inMask=inMask, refMask=refMask, outDirPath=affineDirPath)
     affineField = affineToField(affine, refImg.GetSize(), refImg.GetSpacing())
     invAffine = affineInverse(affine)
     invAffineField = affineToField(invAffine, inImg.GetSize(), inImg.GetSpacing())
     inImg = imgApplyField(initialInImg, affineField, size=refImg.GetSize())
+    if(inMask): inMask = imgApplyField(initialInMask, affineField, size=refImg.GetSize(), useNearest=True)
+    if(refMask): refMask = imgApplyField(initialRefMask, affineField, size=refImg.GetSize(), useNearest=True)
 
     if outDirPath != "":
         imgWrite(inImg, affineDirPath+"in.img")
+        if(inMask): imgWrite(inMask, affineDirPath+"inMask.img")
+        if(refMask): imgWrite(refMask, affineDirPath+"refMask.img")
 
     # Deformably align in and ref images
     if(verbose): print("Deformable alignment")
-    (field, invField) = imgMetamorphosisComposite(inImg, refImg, alphaList=lddmmAlphaList, scaleList=lddmmScaleList, useBias=False, useMI=useMI, verbose=verbose, iterations=iterations, outDirPath=lddmmDirPath)
+    (field, invField) = imgMetamorphosisComposite(inImg, refImg, alphaList=lddmmAlphaList, scaleList=lddmmScaleList, useBias=False, useMI=useMI, verbose=verbose, iterations=iterations, inMask=inMask, refMask=refMask, outDirPath=lddmmDirPath)
     field = fieldApplyField(field, affineField)
     invField = fieldApplyField(invAffineField, invField)
     inImg = imgApplyField(initialInImg, field, size=refImg.GetSize())
