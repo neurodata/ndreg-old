@@ -14,32 +14,34 @@ sudo apt-get -y install cmake python-numpy libinsighttoolkit4-dev libfftw3-dev #
 
 ## Installing dependances on Ubuntu 15.10 and earlier or other linux distributions
  * Build and install ITK 4.10.0 or later
-```bash
-itkVersion=4.10.0
-itkMinorVersion=`echo ${itkVersion} | cut -d'.' -f 1,2`
-mkdir itk; cd itk
-wget https://sourceforge.net/projects/itk/files/itk/${itkMinorVersion}/InsightToolkit-${itkVersion}.tar.gz
-tar -vxzf InsightToolkit-${itkVersion}.tar.gz
-mv InsightToolkit-${itkVersion} src/
-mkdir bin; cd bin
-cmake -G "Unix Makefiles" -DITK_USE_SYSTEM_FFTW=OFF -DITK_USE_FFTWD=ON -DITK_USE_FFTWF=ON -DModule_ITKReview=ON ../src 
-make && sudo make install
-```
+ ```bash
+ itkVersion=4.10.0
+ itkMinorVersion=`echo ${itkVersion} | cut -d'.' -f 1,2`
+ mkdir itk; cd itk
+ wget https://sourceforge.net/projects/itk/files/itk/${itkMinorVersion}/InsightToolkit-${itkVersion}.tar.gz
+ tar -vxzf InsightToolkit-${itkVersion}.tar.gz
+ mv InsightToolkit-${itkVersion} src/
+ mkdir bin; cd bin
+ cmake -G "Unix Makefiles" -DITK_USE_SYSTEM_FFTW=OFF -DITK_USE_FFTWD=ON -DITK_USE_FFTWF=ON -DModule_ITKReview=ON ../src 
+ make && sudo make install
+ ```
  * For Ubuntu 15.10 and earlier
- ..* Install dependances
-```bash
-sudo apt-get -y install cmake
-```
- ..* Proceded to **Installing ndreg**
+ 
+  * Install dependances
+
+  ```bash
+  sudo apt-get -y install cmake
+  ```
+  * Proceded to **Installing ndreg**
 
  * For Centos 6.7 and later
- ..* Install dependances
-```bash
-sudo yum -y install libjpeg-devel cmake 
-sudo /usr/local/bin/pip install  --trusted-host www.simpleitk.org -f http://www.simpleitk.org/SimpleITK/resources/software.html SimpleITK
-sudo /usr/local/bin/pip install blosc==1.3.0
-```
- ..* Proceded to **Installing ndreg**
+  * Install dependances
+  ```bash
+  sudo yum -y install libjpeg-devel cmake 
+  sudo /usr/local/bin/pip install  --trusted-host www.simpleitk.org -f http://www.simpleitk.org/SimpleITK/resources/software.html SimpleITK
+  sudo /usr/local/bin/pip install blosc==1.3.0
+  ```
+  * Proceded to **Installing ndreg**
 
 ### Installing ndreg
 ```
