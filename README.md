@@ -14,6 +14,7 @@ sudo apt-get -y install cmake python-numpy libinsighttoolkit4-dev libfftw3-dev #
 
 ## Installing dependances on Ubuntu 15.10 and earlier or other linux distributions
  * Build and install ITK 4.10.0 or later
+ 
  ```bash
  itkVersion=4.10.0
  itkMinorVersion=`echo ${itkVersion} | cut -d'.' -f 1,2`
@@ -25,6 +26,7 @@ sudo apt-get -y install cmake python-numpy libinsighttoolkit4-dev libfftw3-dev #
  cmake -G "Unix Makefiles" -DITK_USE_SYSTEM_FFTW=OFF -DITK_USE_FFTWD=ON -DITK_USE_FFTWF=ON -DModule_ITKReview=ON ../src 
  make && sudo make install
  ```
+ 
  * For Ubuntu 15.10 and earlier
  
   * Install dependances
