@@ -8,11 +8,11 @@ Submit bug reports [here](https://github.com/openconnectome/ndreg/issues/new).
  * Install dependancies
 
 ```bash
-sudo apt-get -y install cmake python-numpy libinsighttoolkit4-dev libfftw3-dev # Install dependencies
+sudo apt-get -y install cmake python-numpy libinsighttoolkit4-dev libfftw3-dev
 ```
  * Proceded to **Installing ndreg**
 
-## Installing dependances on Ubuntu 15.10 and earlier or other linux distributions
+## Installing dependances other linux distributions
  * Build and install ITK 4.10.0 or later
  
  ```bash
@@ -45,7 +45,7 @@ sudo apt-get -y install cmake python-numpy libinsighttoolkit4-dev libfftw3-dev #
   ```
   * Proceded to **Installing ndreg**
 
-### Installing ndreg
+## Installing ndreg
 ```
 git clone https://github.com/neurodata/ndreg.git
 cd ndreg
