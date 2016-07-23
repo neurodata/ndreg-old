@@ -97,7 +97,7 @@ def dirMake(dirPath):
         return dirPath
 
 
-def imgHM(inImg, refImg, numMatchPoints=8, numBins=64):
+def imgHM(inImg, refImg, numMatchPoints=32, numBins=256):
     """
     Histogram matches input image to reference image and writes result to output image
     """
@@ -194,7 +194,7 @@ def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolut
         try:
             refProjMetadata = nd.get_proj_info(refToken)
         except:
-            raise Exception("Reference project token {0} was not found on server {1}".format(inToken, nd.hostname))
+            raise Exception("Reference project token {0} was not found on server {1}".format(refToken, nd.hostname))
 
         # Get lims metadata (spacing and orientation) of reference token
         refLimsMetadata = limsGetMetadata(refToken)
@@ -450,6 +450,7 @@ def imgResample(img, spacing, size=[], useNearest=False):
     
     return sitk.Resample(img, size, identityTransform, interpolator, zeroOrigin, spacing)
 
+
 def imgLargestMaskObject(maskImg):
     ccFilter = sitk.ConnectedComponentImageFilter()
     labelImg = ccFilter.Execute(maskImg)
@@ -460,6 +461,41 @@ def imgLargestMaskObject(maskImg):
     outImg = sitk.GetImageFromArray((labelArray==largestLabel).astype(np.int16))
     outImg.CopyInformation(maskImg) # output image should have same metadata as input mask image
     return outImg
+
+def createTmpRegistration(samplingPercentage=0.01):
+    identityTransform = sitk.Transform()
+    tmpRegistration = sitk.ImageRegistrationMethod()
+    tmpRegistration.SetMetricSamplingStrategy(tmpRegistration.RANDOM)
+    tmpRegistration.SetMetricSamplingPercentage(samplingPercentage)
+    tmpRegistration.SetInterpolator(sitk.sitkNearestNeighbor)
+    tmpRegistration.SetInitialTransform(identityTransform)
+    tmpRegistration.SetOptimizerAsGradientDescent(learningRate=1e-14, numberOfIterations=1)
+    return tmpRegistration
+
+def imgMI(inImg, refImg, numBins=64):
+    """
+    Compute mattes mutual information between input and reference images
+    """
+    
+    # In SimpleITK the metric can't be accessed directly.
+    # Therefore we create a do-nothing registration method which uses an identity transform to get the metric value
+    tmpRegistration = createTmpRegistration()
+    tmpRegistration.SetMetricAsMattesMutualInformation(numBins)
+    tmpRegistration.Execute( sitk.Cast(refImg,sitk.sitkFloat32),sitk.Cast(inImg, sitk.sitkFloat32) )
+
+    return -tmpRegistration.GetMetricValue()
+
+def imgMSE(inImg, refImg):
+    """
+    Compute mean square error between input and reference images
+    """
+    
+    tmpRegistration = createTmpRegistration()
+    tmpRegistration.SetMetricAsMeanSquares()
+    tmpRegistration.Execute( sitk.Cast(refImg,sitk.sitkFloat32),sitk.Cast(inImg, sitk.sitkFloat32) )
+
+    return tmpRegistration.GetMetricValue()
+
 
 def imgMakeRGBA(imgList, dtype=sitk.sitkUInt8):
     if len(imgList) < 3 or len(imgList) > 4: raise Exception("imgList must contain 3 ([r,g,b]) or 4 ([r,g,b,a]) channels.")
@@ -739,10 +775,7 @@ def imgChecker(inImg, refImg, useHM=True, pattern=[4]*dimension):
         tmpImg.CopyInformation(refImg)
         inImg = sitk.PasteImageFilter().Execute(tmpImg, inImg, sourceSize, zeroIndex, zeroIndex)
 
-    if useHM:
-        numBins = 64
-        numMatchPoints = 8
-        inImg = sitk.HistogramMatchingImageFilter().Execute(inImg, refImg, numBins, numMatchPoints, False)
+    if useHM: inImg = imgHM(inImg, refImg)
 
     return sitk.CheckerBoardImageFilter().Execute(inImg, refImg,pattern)
 
