@@ -14,6 +14,7 @@
 #include "itkBSplineKernelFunction.h"
 #include "itkGridImageSource.h"
 #include "itkWrapExtrapolateImageFunction.h"
+#include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkDisplacementFieldTransform.h"
 #include "itkMattesMutualInformationImageToImageMetricv4.h"
 #include "itkMeanSquaresImageToImageMetricv4.h"
@@ -37,8 +38,9 @@ int main(int argc, char* argv[])
     cerr<<"Usage:"<<endl;
     cerr<<"\t"<<argv[0]<<" --in InputPath --ref ReferencePath --out OutputPath"<<endl;
     cerr<<"\t\t[ --inmask inMaskPath"<<endl;
-    cerr<<"\t\t[ --refmask refMaskPath"<<endl;
-    cerr<<"\t\t[ --field OutputDisplacementFieldPath"<<endl;
+    cerr<<"\t\t  --refmask refMaskPath"<<endl;
+    cerr<<"\t\t  --outmask outMaskPath"<<endl;
+    cerr<<"\t\t  --field OutputDisplacementFieldPath"<<endl;
     cerr<<"\t\t  --invfield OutputInverseDisplacementFieldPath"<<endl;
     cerr<<"\t\t  --bias OutputBiasPath"<<endl;
     cerr<<"\t\t  --grid OutputGridPath"<<endl;
@@ -56,6 +58,7 @@ int main(int argc, char* argv[])
     cerr<<"\t\t  --cost CostFunction"<<endl;
     cerr<<"\t\t\t 0 = Mean Square Error"<<endl;
     cerr<<"\t\t\t 1 = Mattes Mutual Information"<<endl;
+    cerr<<"\t\t  --bins Number of bins used with MI"<<endl;
     cerr<<"\t\t  --verbose ]"<<endl;
     return EXIT_FAILURE;
   }
@@ -150,13 +153,14 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   typedef itk::ImageMaskSpatialObject<ImageDimension>  MaskType;
   typedef typename MaskType::ImageType                 MaskImageType;
   typedef itk::ImageFileReader<MaskImageType>          MaskReaderType;
+  typename MaskImageType::Pointer inputMaskImage;
   typename MaskType::Pointer movingMask;
 
   string inputMaskPath;
   parser->GetCommandLineArgument("--inmask", inputMaskPath);
+
   if(inputMaskPath != "")
   {
-    
     typename MaskReaderType::Pointer inputMaskReader = MaskReaderType::New();
     inputMaskReader->SetFileName(inputMaskPath);
     try
@@ -169,9 +173,9 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
       cerr<<exceptionObject<<endl;
       return EXIT_FAILURE;
     }
-
+    inputMaskImage = inputMaskReader->GetOutput();
     movingMask = MaskType::New();
-    movingMask->SetImage(inputMaskReader->GetOutput());
+    movingMask->SetImage(inputMaskImage);
 
   }
 
@@ -277,6 +281,9 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     metamorphosis->AddObserver(itk::IterationEvent(),observer);
   }
 
+  unsigned int numBins = 128;
+  parser->GetCommandLineArgument("--bins", numBins);
+
   if(parser->ArgumentExists("--cost"))
   {
     unsigned int costFunction;
@@ -288,7 +295,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
       {
         typedef itk::MattesMutualInformationImageToImageMetricv4<ImageType, ImageType> MetricType;
         typename MetricType::Pointer metric = MetricType::New();
-        metric->SetNumberOfHistogramBins(128);
+        metric->SetNumberOfHistogramBins(numBins);
         metric->SetFixedImageMask(fixedMask);
         metric->SetMovingImageMask(movingMask);
 
@@ -394,6 +401,44 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     returnValue = EXIT_FAILURE;
   }
 
+  // Write output mask
+  string outMaskPath;
+  parser->GetCommandLineArgument("--outmask", outMaskPath);
+  
+  if(outMaskPath != "" && inputMaskImage)
+  {
+
+    typedef itk::NearestNeighborInterpolateImageFunction<MaskImageType, ScalarType> MaskInterpolatorType;
+    typename MaskInterpolatorType::Pointer maskInterpolator = MaskInterpolatorType::New();
+
+    typedef itk::WrapExtrapolateImageFunction<MaskImageType, ScalarType> MaskExtrapolatorType;
+    typename MaskExtrapolatorType::Pointer maskExtrapolator = MaskExtrapolatorType::New();    
+
+    typedef itk::ResampleImageFilter<MaskImageType,MaskImageType, ScalarType>   MaskResamplerType;
+    typename MaskResamplerType::Pointer maskResampler = MaskResamplerType::New();
+    maskResampler->SetInput(inputMaskImage);
+    maskResampler->SetTransform(transform); // phi_{10}
+    maskResampler->UseReferenceImageOn();
+    maskResampler->SetReferenceImage(fixedImage);
+    maskResampler->SetInterpolator(maskInterpolator);
+    maskResampler->SetExtrapolator(maskExtrapolator);
+
+    // Write mask to file
+    typename OutputWriterType::Pointer maskWriter = OutputWriterType::New();
+    maskWriter->SetInput(maskResampler->GetOutput());
+    maskWriter->SetFileName(outMaskPath);
+    try
+    {
+      maskWriter->Update();
+    }
+    catch(itk::ExceptionObject& exceptionObject)
+    {
+      cerr<<"Error: Could not write mask image: "<<outMaskPath<<endl;
+      cerr<<exceptionObject<<endl;
+      returnValue = EXIT_FAILURE;
+    }
+  }
+
   // Write checker board of reference and output image
   string checkerPath;
   parser->GetCommandLineArgument("--checker", checkerPath);
@@ -404,9 +449,13 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     fixedCaster->SetInput(fixedImage);
 
     typedef itk::CheckerBoardImageFilter<OutputImageType> CheckerFilterType;
+    typename CheckerFilterType::PatternArrayType pattern;
+    pattern.Fill(8);
+
     typename CheckerFilterType::Pointer checker = CheckerFilterType::New();
     checker->SetInput1(fixedCaster->GetOutput());
     checker->SetInput2(outputImage);
+    checker->SetCheckerPattern(pattern);
   
     typename OutputWriterType::Pointer checkerWriter = OutputWriterType::New();
     checkerWriter->SetInput(checker->GetOutput());
@@ -497,6 +546,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     }
   }
   
+
   // Write grid
   string gridPath;
   parser->GetCommandLineArgument("--grid", gridPath);

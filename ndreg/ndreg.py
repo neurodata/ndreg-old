@@ -462,7 +462,7 @@ def imgLargestMaskObject(maskImg):
     outImg.CopyInformation(maskImg) # output image should have same metadata as input mask image
     return outImg
 
-def createTmpRegistration(samplingPercentage=0.01):
+def createTmpRegistration(inMask=None, refMask=None,samplingPercentage=0.01):
     identityTransform = sitk.Transform()
     tmpRegistration = sitk.ImageRegistrationMethod()
     tmpRegistration.SetMetricSamplingStrategy(tmpRegistration.RANDOM)
@@ -470,27 +470,31 @@ def createTmpRegistration(samplingPercentage=0.01):
     tmpRegistration.SetInterpolator(sitk.sitkNearestNeighbor)
     tmpRegistration.SetInitialTransform(identityTransform)
     tmpRegistration.SetOptimizerAsGradientDescent(learningRate=1e-14, numberOfIterations=1)
+    if(inMask): tmpRegistration.SetMetricMovingMask(inMask)
+    if(refMask): tmpRregistration.SetMetricFixedMask(refMask)
+
     return tmpRegistration
 
-def imgMI(inImg, refImg, numBins=64):
+def imgMI(inImg, refImg, inMask=None, refMask=None, numBins=64):
     """
     Compute mattes mutual information between input and reference images
     """
     
     # In SimpleITK the metric can't be accessed directly.
     # Therefore we create a do-nothing registration method which uses an identity transform to get the metric value
-    tmpRegistration = createTmpRegistration()
+    tmpRegistration = createTmpRegistration(inMask, refMask)
     tmpRegistration.SetMetricAsMattesMutualInformation(numBins)
+    
     tmpRegistration.Execute( sitk.Cast(refImg,sitk.sitkFloat32),sitk.Cast(inImg, sitk.sitkFloat32) )
 
     return -tmpRegistration.GetMetricValue()
 
-def imgMSE(inImg, refImg):
+def imgMSE(inImg, refImg, inMask=None, refMask=None):
     """
     Compute mean square error between input and reference images
     """
     
-    tmpRegistration = createTmpRegistration()
+    tmpRegistration = createTmpRegistration(inMask, refMask)
     tmpRegistration.SetMetricAsMeanSquares()
     tmpRegistration.Execute( sitk.Cast(refImg,sitk.sitkFloat32),sitk.Cast(inImg, sitk.sitkFloat32) )
 

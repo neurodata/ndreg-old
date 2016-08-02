@@ -20,7 +20,7 @@ MetamorphosisImageRegistrationMethodv4()
   m_MinImageEnergyFraction = 0;  
   m_MinImageEnergy = 0;
   m_MaxImageEnergy = 0;
-  m_NumberOfTimeSteps = 4;            // 4 
+  m_NumberOfTimeSteps = 10;            // 4 
   m_NumberOfIterations = 100;         // 20
   m_UseJacobian = true;
   m_UseBias = true;
