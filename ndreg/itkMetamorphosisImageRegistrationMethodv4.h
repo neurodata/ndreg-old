@@ -192,6 +192,7 @@ public:
   double GetImageEnergy();
   double GetImageEnergyFraction();
   double GetEnergy();
+  double GetLength();
   BiasImagePointer GetBias();
 
 protected:

@@ -51,12 +51,12 @@ def isNumber(variable):
         return False
     return True
 
-def run(command, checkReturnValue=True, quiet=True):
+def run(command, checkReturnValue=True, verbose=False):
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
     outText = ""
 
     for line in iter(process.stdout.readline, ''):
-        if not quiet:  sys.stdout.write(line)
+        if verbose:  sys.stdout.write(line)
         outText += line
     #process.wait()
     process.communicate()[0]
@@ -108,10 +108,14 @@ def imgRead(path):
     """
     Alias for sitk.ReadImage
     """
+
     inImg = sitk.ReadImage(path)
-    if(inImg.GetDimension() == 2): inImg = sitk.JoinSeriesImageFilter().Execute(inImg)
-    inImg.SetDirection(identityDirection)
-    inImg.SetOrigin(zeroOrigin)
+    inImg = imgCollaspeDimension(inImg) ###
+    #if(inImg.GetDimension() == 2): inImg = sitk.JoinSeriesImageFilter().Execute(inImg)
+        
+    inDimension = inImg.GetDimension()
+    inImg.SetDirection(sitk.AffineTransform(inDimension).GetMatrix())
+    inImg.SetOrigin([0]*inDimension)
 
     return inImg
 
@@ -150,10 +154,12 @@ def imgDownload(token, channel="", resolution=0, server="openconnecto.me", size=
     img = sitk.Cast(sitk.GetImageFromArray(array),ndToSitkDataTypes[dataType]) # convert numpy array to sitk image
 
     # Reverse axes order
-    
     img = sitk.PermuteAxesImageFilter().Execute(img,range(dimension-1,-1,-1))
     img.SetDirection(identityDirection)
     img.SetSpacing(spacing)
+
+    # Convert to 2D if only one slice
+    img = imgCollaspeDimension(img)
 
     return img
 
@@ -283,7 +289,7 @@ def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolut
 
     return inImg
 
-def imgPostprocess(inImg, refToken, outToken, useNearest=False, doSteps=[1,1], verbose=False, outDirPath=""):
+def imgPostprocess(inImg, refToken, outToken, outChannel="", useNearest=False, doSteps=[1,1], verbose=False, outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     refLimsMetadata = limsGetMetadata(refToken)
@@ -317,7 +323,6 @@ def imgPostprocess(inImg, refToken, outToken, useNearest=False, doSteps=[1,1], v
         if outDirPath !="": imgWrite(inImg, outDirPath+"1_resample/in.img")
 
         if verbose: print("Uploading results")
-        outChannel = "annotation"
         imgUpload(inImg, outToken, channel=outChannel, resolution=outResolution)
 
 
@@ -339,6 +344,8 @@ def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server="openc
     elif not(channel in channelList):
         raise Exception("Channel '{0}' does not exist for given token.".format(channel))
 
+    # Make input image 3D
+    if(img.GetDimension() == 2): img = sitk.JoinSeriesImageFilter().Execute(img)
 
     # Convert with RGB or RGBA multi-component images to uint32
     numComponents = img.GetNumberOfComponentsPerPixel()
@@ -377,7 +384,7 @@ def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server="openc
     imgSize = img.GetSize()
 
     # Raise exception if input image is too big 
-    for i in range(dimension):
+    for i in range(img.GetDimension()):
         if imgSize[i] > serverSize[i]: raise Exception("Input image with size {0} excedes bounds of token {1} with size {2}".format(imgSize, token, datasetSize))
 
     # Get image data type from server
@@ -387,8 +394,8 @@ def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server="openc
     # Cast input image to server's data type
     castImg = sitk.Cast(img,ndToSitkDataTypes[dataType])
 
-    # Reverse axis order
-    array = sitk.GetArrayFromImage(castImg).transpose(range(dimension-1,-1,-1))
+    # Reverse axis order    
+    array = sitk.GetArrayFromImage(castImg).transpose(range(img.GetDimension()-1,-1,-1))
 
     # Upload all image data from specified channel
     nd.post_cutout(token, channel, offset[0]+start[0], offset[1]+start[1], offset[2]+start[2], data=array, resolution=resolution)    
@@ -450,6 +457,30 @@ def imgResample(img, spacing, size=[], useNearest=False):
     
     return sitk.Resample(img, size, identityTransform, interpolator, zeroOrigin, spacing)
 
+def imgPad(img, padding=0, useNearest=False):
+     """
+     Pads image by given ammount of padding in units spacing.
+     For example if the input image has a voxel spacing of 2 and the padding=4 then the image will be padded by 2 voxels.
+     If the padding < 0 then the filter crops the image
+     """
+     if isNumber(padding):
+          padding = [padding]*img.GetDimension()
+     elif len(padding) != img.GetDimension():
+          raise Exception("padding must have length {0}.".format(img.GetDimension()))
+     
+     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
+     translationTransform = sitk.TranslationTransform(img.GetDimension(), -np.array(padding))
+     spacing = img.GetSpacing()
+     size = list(img.GetSize())
+     for i in range(img.GetDimension()):
+          if padding[i] > 0:
+               paddingVoxel = int(math.ceil(2*padding[i] / spacing[i]))
+          else:
+               paddingVoxel = int(math.floor(2*padding[i] / spacing[i]))
+          size[i]+=paddingVoxel
+
+     origin = [0]*img.GetDimension()
+     return sitk.Resample(img, size, translationTransform, interpolator, origin, spacing)
 
 def imgLargestMaskObject(maskImg):
     ccFilter = sitk.ConnectedComponentImageFilter()
@@ -462,11 +493,9 @@ def imgLargestMaskObject(maskImg):
     outImg.CopyInformation(maskImg) # output image should have same metadata as input mask image
     return outImg
 
-def createTmpRegistration(inMask=None, refMask=None,samplingPercentage=0.01):
-    identityTransform = sitk.Transform()
+def createTmpRegistration(inMask=None, refMask=None,samplingPercentage=100, dimension=dimension):
+    identityTransform = sitk.Transform(dimension, sitk.sitkIdentity)
     tmpRegistration = sitk.ImageRegistrationMethod()
-    tmpRegistration.SetMetricSamplingStrategy(tmpRegistration.RANDOM)
-    tmpRegistration.SetMetricSamplingPercentage(samplingPercentage)
     tmpRegistration.SetInterpolator(sitk.sitkNearestNeighbor)
     tmpRegistration.SetInitialTransform(identityTransform)
     tmpRegistration.SetOptimizerAsGradientDescent(learningRate=1e-14, numberOfIterations=1)
@@ -475,16 +504,43 @@ def createTmpRegistration(inMask=None, refMask=None,samplingPercentage=0.01):
 
     return tmpRegistration
 
-def imgMI(inImg, refImg, inMask=None, refMask=None, numBins=64):
+def imgCollaspeDimension(inImg):
+    inSize = inImg.GetSize()
+
+    if inImg.GetDimension() == dimension and inSize[dimension-1] == 1:
+        outSize = list(inSize)
+        outSize[dimension-1] = 0
+        outIndex = [0]*dimension
+        inImg = sitk.Extract(inImg, outSize, outIndex, 1)
+        
+    return inImg
+
+
+def imgNorm(img):
+    """
+    Returns the L2-Norm of an image
+    """
+    if img.GetNumberOfComponentsPerPixel() > 1: img = sitk.VectorMagnitude(img)
+    stats = sitk.StatisticsImageFilter()
+    stats.Execute(img)    
+    return stats.GetSum()
+
+
+def imgMI(inImg, refImg, inMask=None, refMask=None, numBins=128):
     """
     Compute mattes mutual information between input and reference images
     """
+        
     
     # In SimpleITK the metric can't be accessed directly.
     # Therefore we create a do-nothing registration method which uses an identity transform to get the metric value
-    tmpRegistration = createTmpRegistration(inMask, refMask)
+    inImg = imgCollaspeDimension(inImg)
+    refImg = imgCollaspeDimension(refImg)    
+    if inMask: imgCollaspeDimension(inMask)
+    if refMask: imgCollaspeDimension(refMask)
+
+    tmpRegistration = createTmpRegistration(inMask, refMask, dimension=inImg.GetDimension())
     tmpRegistration.SetMetricAsMattesMutualInformation(numBins)
-    
     tmpRegistration.Execute( sitk.Cast(refImg,sitk.sitkFloat32),sitk.Cast(inImg, sitk.sitkFloat32) )
 
     return -tmpRegistration.GetMetricValue()
@@ -493,8 +549,11 @@ def imgMSE(inImg, refImg, inMask=None, refMask=None):
     """
     Compute mean square error between input and reference images
     """
-    
-    tmpRegistration = createTmpRegistration(inMask, refMask)
+    inImg = imgCollaspeDimension(inImg)
+    refImg = imgCollaspeDimension(refImg)    
+    if inMask: imgCollaspeDimension(inMask)
+    if refMask: imgCollaspeDimension(refMask)
+    tmpRegistration = createTmpRegistration(inMask, refMask, dimension=refImg.GetDimension())
     tmpRegistration.SetMetricAsMeanSquares()
     tmpRegistration.Execute( sitk.Cast(refImg,sitk.sitkFloat32),sitk.Cast(inImg, sitk.sitkFloat32) )
 
@@ -525,6 +584,11 @@ def imgMakeRGBA(imgList, dtype=sitk.sitkUInt8):
 
     return sitk.ComposeImageFilter().Execute(castImgList)
 
+def imgThreshold(img, threshold=0):
+    """
+    Thresholds image at inPath at given threshold and writes result to outPath.
+    """
+    return sitk.BinaryThreshold(img, 0, threshold, 0, 1)
 
 def imgMakeMask(inImg, threshold=None, forgroundValue=1):
     """
@@ -571,6 +635,8 @@ def imgMask(img, mask):
     """
     Convenience function to apply mask to image
     """
+    mask = imgResample(mask, img.GetSpacing(), img.GetSize(), useNearest=True)
+    mask = sitk.Cast(mask, img.GetPixelID())
     return  sitk.MaskImageFilter().Execute(img, mask)
 
 def sizeOut(inImg, transform, outSpacing):
@@ -615,7 +681,7 @@ def imgApplyField(img, field, useNearest=False, size=[], spacing=[],defaultValue
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
 
     # Set transform field
-    transform = sitk.DisplacementFieldTransform(dimension)
+    transform = sitk.DisplacementFieldTransform(img.GetDimension())
     transform.SetInterpolator(sitk.sitkLinear)
     transform.SetDisplacementField(field)
 
@@ -623,16 +689,16 @@ def imgApplyField(img, field, useNearest=False, size=[], spacing=[],defaultValue
     if size == []:
         size = img.GetSize()
     else:
-        if len(size) != dimension: raise Exception("size must have length {0}.".format(dimension))
+        if len(size) != img.GetDimension(): raise Exception("size must have length {0}.".format(img.GetDimension()))
 
     # Set Spacing
     if spacing == []:
         spacing = img.GetSpacing()
     else:
-        if len(spacing) != dimension: raise Exception("spacing must have length {0}.".format(dimension))
+        if len(spacing) != img.GetDimension(): raise Exception("spacing must have length {0}.".format(img.GetDimension()))
     
     # Apply displacement transform
-    return  sitk.Resample(img, size, transform, interpolator, zeroOrigin, spacing, img.GetDirection() ,defaultValue)
+    return  sitk.Resample(img, size, transform, interpolator, [0]*img.GetDimension(), spacing, img.GetDirection() ,defaultValue)
     
 def imgApplyAffine(inImg, affine, useNearest=False, size=[], spacing=[]):
     # Set interpolator
@@ -802,7 +868,7 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     try:
         transform = [sitk.TranslationTransform(dimension), sitk.Similarity3DTransform(), sitk.AffineTransform(dimension)][method]
     except:
-        raise Exception("method is invalad")
+        raise Exception("method is invalid")
 
     # Do registration
     registration = sitk.ImageRegistrationMethod()
@@ -820,8 +886,12 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
         registration.SetMetricAsMeanSquares()
 
     learningRate=0.1
+
+
     registration.SetOptimizerAsRegularStepGradientDescent(learningRate=learningRate, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
     if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1} \t{2}".format(registration.GetOptimizerIteration(),registration.GetMetricValue(), registration.GetOptimizerLearningRate())))
+
+    if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])
                     
     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,0.25),
                          sitk.SmoothingRecursiveGaussian(inImg,0.25) )
@@ -830,7 +900,6 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
         affine = identityAffine[0:dimension**2] + list(transform.GetOffset())
     else:
         affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
-
     return affine
 
 def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, iterations=1000, inAffine=identityAffine,verbose=False, inMask=None, refMask=None, outDirPath=""):
@@ -898,11 +967,13 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
     invFieldPath = outDirPath + "invField.vtk"
 
     binPath = ndregDirPath + "metamorphosis "
-    command = binPath + " --in {0} --ref {1} --out {2} --alpha {3} --beta {4} --field {5} --invfield {6} --iterations {7} --scale {8} --verbose ".format(inPath, refPath, outPath, alpha, beta, fieldPath, invFieldPath, iterations, scale)
+    steps = 5 ###
+    command = binPath + " --in {0} --ref {1} --out {2} --alpha {3} --beta {4} --field {5} --invfield {6} --iterations {7} --scale {8} --steps {9} --verbose ".format(inPath, refPath, outPath, alpha, beta, fieldPath, invFieldPath, iterations, scale, steps)
     if(not useBias): command += " --mu 0"
     if(useMI):
-        command += " --cost 1 --sigma 1e-4 --epsilon 1e-3"
-
+        #command += " --cost 1 --sigma 1e-5 --epsilon 1e-3" 
+        command += " --cost 1 --sigma 1e-4 --epsilon 1e-3" 
+        
     if(inMask):
         inMaskPath = outDirPath + "inMask.img"
         imgWrite(inMask, inMaskPath)
@@ -912,9 +983,13 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
         refMaskPath = outDirPath + "refMask.img"
         imgWrite(refMask, refMaskPath)
         command += " --refmask " + refMaskPath
-
-    os.system(command)
-    #run(command, quiet=not(verbose))
+    
+    if verbose: print(command)
+    #os.system(command)
+    (returnValue, logText) = run(command, verbose=verbose)
+    
+    logPath = outDirPath+"log.txt"
+    txtWrite(logText, logPath)
 
     field = imgRead(fieldPath)
     invField = imgRead(invFieldPath)
@@ -968,7 +1043,6 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
         scale = scaleList[step]
         stepDirPath = outDirPath + "step" + str(step) + "/"
         if(verbose): print("Step {0}: alpha={1}, beta={2}, scale={3}".format(step,alpha, beta, scale))
-        imgWrite(inMask, stepDirPath+"inMask.img")
 
         (field, invField) = imgMetamorphosis(inImg, refImg, 
                                              alpha, 
@@ -1008,7 +1082,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
     
     return (compositeField, compositeInvField)
 
-def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1.0], lddmmAlphaList=[0.02], iterations=1000, useMI=False, useNearest=True, inAffine=identityAffine, inMask=None, refMask=None, verbose=False, outDirPath=""):
+def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1.0], lddmmAlphaList=[0.02], iterations=1000, useMI=False, useNearest=True, inAffine=identityAffine, padding=0, inMask=None, refMask=None, verbose=False, outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     initialDirPath = outDirPath + "0_initial/"
@@ -1020,10 +1094,10 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
     # Resample and histogram match in and ref images
     refSpacing = refImg.GetSpacing()
     spacing = [x / scale for x in refSpacing]
-    inImg = imgResample(inImg, spacing, useNearest=useNearest)
-    refImg = imgResample(refImg, spacing, useNearest=useNearest)
-    if(inMask): inMask = imgResample(inMask, spacing, useNearest=True)
-    if(refMask): refMask = imgResample(refMask, spacing, useNearest=True)
+    inImg = imgPad(imgResample(inImg, spacing, useNearest=useNearest), padding, useNearest)
+    refImg = imgPad(imgResample(refImg, spacing, useNearest=useNearest), padding, useNearest)
+    if(inMask): inMask = imgPad(imgResample(inMask, spacing, useNearest=True), padding, True)
+    if(refMask): refMask = imgPad(imgResample(refMask, spacing, useNearest=True), padding, True)
 
     if not useMI: inImg = imgHM(inImg, refImg)
     initialInImg = inImg
@@ -1032,6 +1106,8 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
     if outDirPath != "":
         imgWrite(inImg, initialDirPath+"in.img")
         imgWrite(refImg, initialDirPath+"ref.img")
+        if(inMask): imgWrite(inMask, initialDirPath+"inMask.img")
+        if(refMask): imgWrite(refMask, initialDirPath+"refMask.img")
 
     if(verbose): print("Affine alignment")    
     affine = imgAffineComposite(inImg, refImg, scale=affineScale, useMI=useMI, iterations=iterations, inAffine=inAffine, verbose=verbose, inMask=inMask, refMask=refMask, outDirPath=affineDirPath)
@@ -1059,5 +1135,13 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
         imgWrite(invField, lddmmDirPath+"invField.vtk")
         imgWrite(inImg, lddmmDirPath+"in.img")    
         imgWrite(imgChecker(inImg, refImg), lddmmDirPath+"checker.img")
+
+    # Remove padding from fields
+    field = imgPad(field, -padding)
+    invField = imgPad(field, -padding)
+
+    if outDirPath != "":
+        imgWrite(field, outDirPath+"field.vtk")
+        imgWrite(invField, outDirPath+"invField.vtk")
 
     return (field, invField)

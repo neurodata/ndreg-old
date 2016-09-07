@@ -352,6 +352,41 @@ CalculateNorm(TimeVaryingFieldPointer field)
 template<typename TFixedImage, typename TMovingImage>
 double
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
+GetLength()
+{
+  typename TimeVaryingFieldType::Pointer velocity = this->m_OutputTransform->GetVelocityField();
+
+  typename TimeVaryingImageType::IndexType  index;
+  index.Fill(0);
+
+  typename TimeVaryingImageType::SizeType   size = velocity->GetLargestPossibleRegion().GetSize();
+  size[ImageDimension] = 1;
+
+  typename TimeVaryingImageType::RegionType region(index,size);
+
+  double length = 0;
+  for(unsigned int j = 0; j < m_NumberOfTimeSteps; j++)
+  {
+    index[ImageDimension] = j;
+    region.SetIndex(index);
+
+    typedef ExtractImageFilter<TimeVaryingFieldType, TimeVaryingFieldType> ExtractorType;
+    typename ExtractorType::Pointer extractor = ExtractorType::New();
+    extractor->SetInput(velocity);                    // v
+    extractor->SetExtractionRegion(region);
+    extractor->SetDirectionCollapseToIdentity();
+    extractor->Update();
+
+    length += CalculateNorm(extractor->GetOutput()); // || v_j || \Delta t
+  }
+
+  return length;  // \sum_{j=0}^{J-1} || v_j || \Delta t
+}
+
+
+template<typename TFixedImage, typename TMovingImage>
+double
+MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
 GetVelocityEnergy()
 {
   return 0.5 * vcl_pow(CalculateNorm(ApplyKernel(m_InverseVelocityKernel,this->m_OutputTransform->GetVelocityField())),2); // 0.5 ||L_V V||^2

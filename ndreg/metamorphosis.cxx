@@ -340,8 +340,9 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   clock.Stop();
 
   cout<<"E = "<<metamorphosis->GetEnergy()<<" ("<<metamorphosis->GetImageEnergyFraction()*100<<"%)"<<endl;
+  cout<<"Length = "<<metamorphosis->GetLength()<<endl;
   cout<<"Time = "<<clock.GetTotal()<<"s"<<" ("<<clock.GetTotal()/60<<"m)"<<endl;
- 
+
   // Write output images 
   int returnValue = EXIT_SUCCESS;
 
@@ -450,7 +451,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
 
     typedef itk::CheckerBoardImageFilter<OutputImageType> CheckerFilterType;
     typename CheckerFilterType::PatternArrayType pattern;
-    pattern.Fill(8);
+    pattern.Fill(4);
 
     typename CheckerFilterType::Pointer checker = CheckerFilterType::New();
     checker->SetInput1(fixedCaster->GetOutput());
