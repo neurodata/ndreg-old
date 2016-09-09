@@ -15,8 +15,8 @@ MetamorphosisImageRegistrationMethodv4()
   m_Mu = 0.1;                         // 0.1
   m_Sigma = 1.0;                      // 1
   m_Gamma = 1.0;                      // 1
-  this->SetLearningRate(1e-3);        // 1e-6
-  this->SetMinLearningRate(1e-8);    // 1e-10
+  this->SetLearningRate(1e-5);        // 1e-3
+  this->SetMinLearningRate(1e-8);    // 1e-8
   m_MinImageEnergyFraction = 0;  
   m_MinImageEnergy = 0;
   m_MaxImageEnergy = 0;
@@ -540,7 +540,7 @@ GetBias()
 template<typename TFixedImage, typename TMovingImage>
 typename MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::FieldPointer
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
-GetMetricDerivative(FieldPointer field, bool initializeMetric = true, bool useImageGradients = true)
+GetMetricDerivative(FieldPointer field, bool useImageGradients = true)
 {
   FixedImageGradientFilterPointer fixedImageGradientFilter;
   MovingImageGradientFilterPointer movingImageGradientFilter;
@@ -582,8 +582,7 @@ GetMetricDerivative(FieldPointer field, bool initializeMetric = true, bool useIm
   metric->SetMovingImageGradientFilter(movingImageGradientFilter); // \nabla I_0
   metric->SetMovingImageMask(forwardMask);
   metric->SetVirtualDomainFromImage(m_VirtualImage);
-
-  if(initializeMetric){ metric->Initialize(); }
+  metric->Initialize(); 
 
   // Setup metric derivative
   typename MetricDerivativeType::SizeValueType metricDerivativeSize = m_VirtualImage->GetLargestPossibleRegion().GetNumberOfPixels() * ImageDimension;
@@ -609,6 +608,7 @@ GetMetricDerivative(FieldPointer field, bool initializeMetric = true, bool useIm
 
   // ITK dense transforms always return identity for jacobian with respect to parameters.  
   // ... so we provide an option to use it here.
+
   typedef MultiplyImageFilter<FieldType,VirtualImageType>  FieldMultiplierType;
 
   if(m_UseJacobian)
@@ -662,13 +662,13 @@ UpdateControls()
       this->m_OutputTransform->IntegrateVelocityField();
     }
     
-    velocityJoiner->PushBackInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), j==0, true)); // p(t) \nabla I(t) =  p(1, \phi{t1})  \nabla I(1, \phi{t1})
-   
+    velocityJoiner->PushBackInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), true)); // p(t) \nabla I(t) =  p(1, \phi{t1})  \nabla I(1, \phi{t1})
+
     if(m_UseBias)
     {
       typedef VectorIndexSelectionCastImageFilter<FieldType, VirtualImageType> ComponentExtractorType;
       typename ComponentExtractorType::Pointer componentExtractor = ComponentExtractorType::New();
-      componentExtractor->SetInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), j==0, false)); // p(t) [1,1,1] = p(t) \nabla I(t) [1,1,1]
+      componentExtractor->SetInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), false)); // p(t) [1,1,1] = p(t) \nabla I(t) [1,1,1]
       componentExtractor->SetIndex(0);
       componentExtractor->Update();
 
@@ -685,6 +685,7 @@ UpdateControls()
   adder0->SetInput2(ApplyKernel(m_VelocityKernel,velocityJoiner->GetOutput()));   // K_V[p \nabla I]
   adder0->Update();
   TimeVaryingFieldPointer velocityEnergyGradient = adder0->GetOutput();           // \nabla_V E = v + K_V[p \nabla I]
+
 
   // Compute rate energy gradient \nabla_r E = r - \mu^2 K_R[p]
   typedef MultiplyImageFilter<TimeVaryingImageType,TimeVaryingImageType>  TimeVaryingImageMultiplierType;

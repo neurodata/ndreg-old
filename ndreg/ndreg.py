@@ -5,6 +5,7 @@ import numpy as np
 import SimpleITK as sitk
 import ndio.remote.neurodata as neurodata
 import os, math, sys, subprocess, tempfile, shutil, requests
+import matplotlib.pyplot as plt
 from itertools import product
 
 dimension = 3
@@ -441,15 +442,15 @@ def imgResample(img, spacing, size=[], useNearest=False):
     """
     Resamples image to given spacing and size.
     """
-    if len(spacing) != dimension: raise Exception("len(spacing) != " + str(dimension))
+    if len(spacing) != img.GetDimension(): raise Exception("len(spacing) != " + str(img.GetDimension()))
 
     # Set Size
     if size == []:
         inSpacing = img.GetSpacing()
         inSize = img.GetSize()
-        size = [int(math.ceil(inSize[i]*(inSpacing[i]/spacing[i]))) for i in range(dimension)]
+        size = [int(math.ceil(inSize[i]*(inSpacing[i]/spacing[i]))) for i in range(img.GetDimension())]
     else:
-        if len(size) != dimension: raise Exception("len(size) != " + str(dimension))
+        if len(size) != img.GetDimension(): raise Exception("len(size) != " + str(img.GetDimension()))
     
     # Resample input image
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
@@ -645,7 +646,7 @@ def sizeOut(inImg, transform, outSpacing):
     """
     outCornerPointList = []
     inSize = inImg.GetSize()
-    for corner in product((0,1), repeat=dimension):
+    for corner in product((0,1), repeat=inImg.GetDimension()):
         inCornerIndex = np.array(corner)*np.array(inSize)
         inCornerPoint = inImg.TransformIndexToPhysicalPoint(inCornerIndex)
         outCornerPoint = transform.GetInverse().TransformPoint(inCornerPoint)
@@ -701,28 +702,30 @@ def imgApplyField(img, field, useNearest=False, size=[], spacing=[],defaultValue
     return  sitk.Resample(img, size, transform, interpolator, [0]*img.GetDimension(), spacing, img.GetDirection() ,defaultValue)
     
 def imgApplyAffine(inImg, affine, useNearest=False, size=[], spacing=[]):
+    inDimension = inImg.GetDimension()
+
     # Set interpolator
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
 
     # Set affine parameters
-    affineTransform = sitk.AffineTransform(dimension)
+    affineTransform = sitk.AffineTransform(inDimension)
     numParameters = len(affineTransform.GetParameters())
     if (len(affine) != numParameters): raise Exception("affine must have length {0}.".format(numParameters))
-    affineTransform = sitk.AffineTransform(dimension)
+    affineTransform = sitk.AffineTransform(inDimension)
     affineTransform.SetParameters(affine)
 
     # Set Spacing
     if spacing == []:
         spacing = inImg.GetSpacing()
     else:
-        if len(spacing) != dimension: raise Exception("spacing must have length {0}.".format(dimension))
+        if len(spacing) != inDimension: raise Exception("spacing must have length {0}.".format(inDimension))
 
     # Set size
     if size == []:
         # Compute size to contain entire output image
         size = sizeOut(inImg, affineTransform, spacing)
     else:
-       if len(size) != dimension: raise Exception("size must have length {0}.".format(dimension))
+       if len(size) != inDimension: raise Exception("size must have length {0}.".format(inDimension))
     
     # Apply affine transform
     outImg = sitk.Resample(inImg, size, affineTransform, interpolator, zeroOrigin, spacing)
@@ -853,6 +856,8 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     """
     Perform Affine Registration between input image and reference image
     """
+    inDimension = inImg.GetDimension()
+
     # Rescale images
     refSpacing = refImg.GetSpacing()
     spacing = [x / scale for x in refSpacing]
@@ -865,8 +870,10 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
     
     # Set transform
+
     try:
-        transform = [sitk.TranslationTransform(dimension), sitk.Similarity3DTransform(), sitk.AffineTransform(dimension)][method]
+        rigidTransformList = [sitk.Similarity2DTransform(), sitk.Similarity3DTransform()]
+        transform = [sitk.TranslationTransform(inDimension), rigidTransformList[inDimension-2], sitk.AffineTransform(inDimension)][method]
     except:
         raise Exception("method is invalid")
 
@@ -891,13 +898,14 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     registration.SetOptimizerAsRegularStepGradientDescent(learningRate=learningRate, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
     if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1} \t{2}".format(registration.GetOptimizerIteration(),registration.GetMetricValue(), registration.GetOptimizerLearningRate())))
 
-    if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])
+    ### if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])
                     
     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,0.25),
                          sitk.SmoothingRecursiveGaussian(inImg,0.25) )
 
     if method == ndregTranslation:
-        affine = identityAffine[0:dimension**2] + list(transform.GetOffset())
+        idAffine = list(sitk.AffineTransform(inDimension).GetParameters())
+        affine = idAffine[0:inDimension**2] + list(transform.GetOffset())
     else:
         affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
     return affine
@@ -946,7 +954,7 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
     
     return compositeAffine    
 
-def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearest=False, useBias=False, useMI=False, verbose=True, inMask=None, refMask=None, outDirPath=""):
+def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearest=False, useBias=False, useMI=False, verbose=False, inMask=None, refMask=None, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
     """
@@ -1145,3 +1153,13 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
         imgWrite(invField, outDirPath+"invField.vtk")
 
     return (field, invField)
+
+def imgShow(img):
+    """
+    Displays an image.  Only 2D images are supported for now
+    """
+    fig = plt.figure()
+    plt.axis('off')
+    plt.imshow(sitk.GetArrayFromImage(img), cmap=plt.cm.gray)
+    plt.show()
+    #return fig

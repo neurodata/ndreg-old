@@ -205,7 +205,7 @@ protected:
   void InitializeKernels(TimeVaryingImagePointer kernel, TimeVaryingImagePointer inverseKernel, double alpha, double gamma);
   void Initialize();
   void IntegrateRate();
-  FieldPointer GetMetricDerivative(FieldPointer field, bool initializeMetric, bool useImageGradients);
+  FieldPointer GetMetricDerivative(FieldPointer field, bool useImageGradients);
   void UpdateControls(); 
   void StartOptimization();
   void GenerateData();
