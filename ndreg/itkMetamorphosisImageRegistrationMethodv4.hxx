@@ -418,7 +418,7 @@ GetRateEnergy()
 template<typename TFixedImage, typename TMovingImage>
 double
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
-GetImageEnergy(VirtualImagePointer movingImage, MaskPointer movingMask=ITK_NULLPTR)
+GetImageEnergy(VirtualImagePointer movingImage, MaskPointer movingMask)
 {    
   typedef CastImageFilter<VirtualImageType, MovingImageType> CasterType;
   typename CasterType::Pointer caster = CasterType::New();
@@ -548,7 +548,7 @@ GetBias()
 template<typename TFixedImage, typename TMovingImage>
 typename MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::FieldPointer
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
-GetMetricDerivative(FieldPointer field, bool useImageGradients = true)
+GetMetricDerivative(FieldPointer field, bool useImageGradients)
 {
   FixedImageGradientFilterPointer fixedImageGradientFilter;
   MovingImageGradientFilterPointer movingImageGradientFilter;
