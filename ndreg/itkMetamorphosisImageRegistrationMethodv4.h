@@ -21,7 +21,7 @@
 #include "itkWrapExtrapolateImageFunction.h"
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkSpatialObjectToImageFilter.h"
-
+//#include "itkContinuousIndex.h"
 namespace itk
 {
 template<class TInputImage, class TOutputImage>
@@ -238,7 +238,7 @@ private:
   VirtualImagePointer m_ForwardImage;
   MaskImagePointer    m_MovingMaskImage;
   MaskImagePointer    m_ForwardMaskImage;
-
+  typename VirtualImageType::PointType m_CenterPoint;
   TimeVaryingImagePointer m_VelocityKernel;
   TimeVaryingImagePointer m_InverseVelocityKernel;
   TimeVaryingImagePointer m_RateKernel;

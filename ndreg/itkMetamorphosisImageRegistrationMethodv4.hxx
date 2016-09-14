@@ -15,12 +15,12 @@ MetamorphosisImageRegistrationMethodv4()
   m_Mu = 0.1;                         // 0.1
   m_Sigma = 1.0;                      // 1
   m_Gamma = 1.0;                      // 1
-  this->SetLearningRate(1e-5);        // 1e-3
-  this->SetMinLearningRate(1e-8);    // 1e-8
+  this->SetLearningRate(1e-3);        // 1e-3
+  this->SetMinLearningRate(1e-8);     // 1e-8
   m_MinImageEnergyFraction = 0;  
   m_MinImageEnergy = 0;
   m_MaxImageEnergy = 0;
-  m_NumberOfTimeSteps = 10;            // 4 
+  m_NumberOfTimeSteps = 10;           // 4 
   m_NumberOfIterations = 100;         // 20
   m_UseJacobian = true;
   m_UseBias = true;
@@ -229,6 +229,14 @@ Initialize()
   m_VirtualImage->SetOrigin(virtualOrigin);
   m_VirtualImage->SetSpacing(virtualSpacing);
   m_VirtualImage->SetDirection(virtualDirection);
+
+  ContinuousIndex<double, ImageDimension> centerIndex;
+  for(unsigned int i = 0; i < ImageDimension; i++)
+  {
+    centerIndex[i] = (virtualSize[i] - virtualIndex[i] - 1.0) / 2;
+  }
+
+  m_VirtualImage->TransformContinuousIndexToPhysicalPoint(centerIndex, m_CenterPoint);
 
   // Initialize rate, r = 0
   m_Rate->SetRegions(velocityRegion);
@@ -735,7 +743,7 @@ UpdateControls()
     typedef DisplacementFieldTransform<RealType,ImageDimension> DisplacementFieldTransformType;
     typename DisplacementFieldTransformType::Pointer transform = DisplacementFieldTransformType::New();
     transform->SetDisplacementField(this->m_OutputTransform->GetDisplacementField()); // \phi_{t1}
-
+   
     // Compute forward image I(1) = I_0 o \phi_{10} + B(1)
     typedef WrapExtrapolateImageFunction<MovingImageType, RealType>         ExtrapolatorType;
     typedef ResampleImageFilter<MovingImageType,VirtualImageType,RealType>  MovingResamplerType;
@@ -797,8 +805,11 @@ UpdateControls()
     }
 
     m_RecalculateEnergy = true;
-    
-    if(GetEnergy() > energyOld)  // If energy increased...
+   
+    typename VirtualImageType::IndexType centerIndex;
+    m_ForwardImage->TransformPhysicalPointToIndex(transform->TransformPoint(m_CenterPoint), centerIndex);
+    bool centerIsInside = m_ForwardImage->GetLargestPossibleRegion().IsInside(centerIndex);
+    if(!centerIsInside || GetEnergy() > energyOld)  // If energy increased or transformed center point of reference image is outside input image domain
     {
       // ...restore the controls to their previous values and decrease learning rate
       this->SetLearningRate(0.5*this->GetLearningRate());
