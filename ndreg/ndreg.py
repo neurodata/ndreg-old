@@ -1154,12 +1154,35 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
 
     return (field, invField)
 
-def imgShow(img):
+def imgShow(img, newFig=True, numSlices=3):
     """
     Displays an image.  Only 2D images are supported for now
     """
-    fig = plt.figure()
-    plt.axis('off')
-    plt.imshow(sitk.GetArrayFromImage(img), cmap=plt.cm.gray)
+    if newFig: fig = plt.figure()
+
+    if img.GetDimension() == 2:
+        plt.axis('off')
+        plt.imshow(sitk.GetArrayFromImage(img), cmap=plt.cm.gray)
+
+    elif img.GetDimension() == 3:
+        size = img.GetSize()
+        for i in range(img.GetDimension()):
+            start = size[2-i]/(numSlices+1)
+            sliceList = np.linspace(start, size[2-i]-start, numSlices)
+            sliceSize = list(size)
+            sliceSize[2-i] = 0
+
+            for (j, slice) in enumerate(sliceList):
+                sliceIndex = [0]*img.GetDimension()
+                sliceIndex[2-i] = int(slice)
+                sliceImg = sitk.Extract(img, sliceSize, sliceIndex)
+
+                plt.subplot(numSlices, img.GetDimension(),i+img.GetDimension()*j+1)
+                plt.imshow(sitk.GetArrayFromImage(sliceImg), cmap=plt.cm.gray)
+                plt.axis('off')
+    else: 
+        raise Exception("Image dimension must be 2 or 3.")
+
     plt.show()
-    #return fig
+
+
