@@ -98,7 +98,7 @@ def dirMake(dirPath):
         return dirPath
 
 
-def imgHM(inImg, refImg, numMatchPoints=32, numBins=256):
+def imgHM(inImg, refImg, numMatchPoints=64, numBins=256):
     """
     Histogram matches input image to reference image and writes result to output image
     """
@@ -870,7 +870,6 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
     
     # Set transform
-
     try:
         rigidTransformList = [sitk.Similarity2DTransform(), sitk.Similarity3DTransform()]
         transform = [sitk.TranslationTransform(inDimension), rigidTransformList[inDimension-2], sitk.AffineTransform(inDimension)][method]
@@ -896,7 +895,7 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
 
 
     registration.SetOptimizerAsRegularStepGradientDescent(learningRate=learningRate, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
-    if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1} \t{2}".format(registration.GetOptimizerIteration(),registration.GetMetricValue(), registration.GetOptimizerLearningRate())))
+    if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
 
     ### if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])
                     
@@ -932,7 +931,7 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
     for (step, method) in enumerate(methodList):
         methodName = methodNameList[step]
         stepDirPath = outDirPath + str(step+1) + "_" + methodName + "/"
-        dirMake(stepDirPath)
+        if outDirPath != "": dirMake(stepDirPath)
         if(verbose): print("Step {0}:".format(methodName))
 
         affine = imgAffine(inImg, refImg, method=method, scale=scale, useNearest=useNearest, useMI=useMI, iterations=iterations, inMask=inMask, refMask=refMask, verbose=verbose)
@@ -954,7 +953,7 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
     
     return compositeAffine    
 
-def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearest=False, useBias=False, useMI=False, verbose=False, inMask=None, refMask=None, outDirPath=""):
+def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearest=False, useBias=False, useMI=False, verbose=False, debug=False, inMask=None, refMask=None, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
     """
@@ -992,7 +991,7 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
         imgWrite(refMask, refMaskPath)
         command += " --refmask " + refMaskPath
     
-    if verbose: print(command)
+    if debug: print(command)
     #os.system(command)
     (returnValue, logText) = run(command, verbose=verbose)
     
@@ -1006,11 +1005,9 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
     return (field, invField)
 
 
-def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, useNearest=False, useBias=True, useMI=False, inMask=None, refMask=None, verbose=True, outDirPath=""):
+def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, useNearest=False, useBias=False, useMI=False, inMask=None, refMask=None, verbose=True, debug=False, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
-    """
-    if outDirPath != "": outDirPath = dirMake(outDirPath)
     """
     useTempDir = False
     if outDirPath == "":
@@ -1018,7 +1015,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
         outDirPath = tempfile.mkdtemp() + "/"
     else:
         outDirPath = dirMake(outDirPath)
-    """
+
     if isNumber(alphaList): alphaList = [float(alphaList)]
     if isNumber(betaList): betaList = [float(betaList)]
     if isNumber(scaleList): scaleList = [float(scaleList)]
@@ -1050,7 +1047,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
         beta = betaList[step]
         scale = scaleList[step]
         stepDirPath = outDirPath + "step" + str(step) + "/"
-        if(verbose): print("Step {0}: alpha={1}, beta={2}, scale={3}".format(step,alpha, beta, scale))
+        if(verbose): print("\nStep {0}: alpha={1}, beta={2}, scale={3}".format(step,alpha, beta, scale))
 
         (field, invField) = imgMetamorphosis(inImg, refImg, 
                                              alpha, 
@@ -1061,6 +1058,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
                                              useBias, 
                                              useMI, 
                                              verbose,
+                                             debug,
                                              inMask=inMask,
                                              refMask=refMask,
                                              outDirPath=stepDirPath)
@@ -1088,6 +1086,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
         imgWrite(inImg, outDirPath+"out.img")
         imgWrite(imgChecker(inImg,refImg), outDirPath+"checker.img")
     
+    if useTempDir: shutil.rmtree(outDirPath)
     return (compositeField, compositeInvField)
 
 def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1.0], lddmmAlphaList=[0.02], iterations=1000, useMI=False, useNearest=True, inAffine=identityAffine, padding=0, inMask=None, refMask=None, verbose=False, outDirPath=""):
@@ -1154,15 +1153,24 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
 
     return (field, invField)
 
-def imgShow(img, newFig=True, numSlices=3):
+def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, numSlices=3):
     """
     Displays an image.  Only 2D images are supported for now
     """
     if newFig: fig = plt.figure()
 
+    if (vmin is None) or (vmax is None):
+        stats = sitk.StatisticsImageFilter()
+        stats.Execute(img)
+        if vmin is None: vmin = stats.GetMinimum()
+        if vmax is None: vmax = stats.GetMaximum()
+
+    if cmap is None: cmap=plt.cm.gray
+    if alpha is None: alpha = 1.0
+
     if img.GetDimension() == 2:
         plt.axis('off')
-        plt.imshow(sitk.GetArrayFromImage(img), cmap=plt.cm.gray)
+        ax = plt.imshow(sitk.GetArrayFromImage(img), cmap=cmap,  vmin=vmin, vmax=vmax, alpha=alpha)
 
     elif img.GetDimension() == 3:
         size = img.GetSize()
@@ -1178,11 +1186,11 @@ def imgShow(img, newFig=True, numSlices=3):
                 sliceImg = sitk.Extract(img, sliceSize, sliceIndex)
 
                 plt.subplot(numSlices, img.GetDimension(),i+img.GetDimension()*j+1)
-                plt.imshow(sitk.GetArrayFromImage(sliceImg), cmap=plt.cm.gray)
+                ax = plt.imshow(sitk.GetArrayFromImage(sliceImg), cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha)
                 plt.axis('off')
     else: 
         raise Exception("Image dimension must be 2 or 3.")
 
-    plt.show()
+    if newFig: plt.show()
 
 
