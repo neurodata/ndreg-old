@@ -120,7 +120,6 @@ def imgRead(path):
 
     return inImg
 
-
 def imgDownload(token, channel="", resolution=0, server="openconnecto.me", size=[]):
     """
     Download image with given token from given server at given resolution.
@@ -163,6 +162,12 @@ def imgDownload(token, channel="", resolution=0, server="openconnecto.me", size=
     img = imgCollaspeDimension(img)
 
     return img
+
+def imgCopy(img):
+    """
+    Returns a copy of the input image
+    """
+    return sitk.Image(img)
 
 def limsGetMetadata(token):
     nd = neurodata()
