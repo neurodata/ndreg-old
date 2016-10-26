@@ -16,7 +16,7 @@ MetamorphosisImageRegistrationMethodv4()
   m_Sigma = 1.0;                      // 1
   m_Gamma = 1.0;                      // 1
   this->SetLearningRate(1e-3);        // 1e-3
-  this->SetMinLearningRate(1e-8);     // 1e-8
+  this->SetMinLearningRate(1e-10);     // 1e-8
   m_MinImageEnergyFraction = 0;  
   m_MinImageEnergy = 0;
   m_MaxImageEnergy = 0;

@@ -466,7 +466,7 @@ def imgResample(img, spacing, size=[], useNearest=False):
 def imgPad(img, padding=0, useNearest=False):
      """
      Pads image by given ammount of padding in units spacing.
-     For example if the input image has a voxel spacing of 2 and the padding=4 then the image will be padded by 2 voxels.
+     For example if the input image has a voxel spacing of 0.5 and the padding=2.0 then the image will be padded by 4 voxels.
      If the padding < 0 then the filter crops the image
      """
      if isNumber(padding):
@@ -499,12 +499,16 @@ def imgLargestMaskObject(maskImg):
     outImg.CopyInformation(maskImg) # output image should have same metadata as input mask image
     return outImg
 
-def createTmpRegistration(inMask=None, refMask=None,samplingPercentage=100, dimension=dimension):
+def createTmpRegistration(inMask=None, refMask=None, samplingFraction=1.0, dimension=dimension):
     identityTransform = sitk.Transform(dimension, sitk.sitkIdentity)
     tmpRegistration = sitk.ImageRegistrationMethod()
     tmpRegistration.SetInterpolator(sitk.sitkNearestNeighbor)
     tmpRegistration.SetInitialTransform(identityTransform)
     tmpRegistration.SetOptimizerAsGradientDescent(learningRate=1e-14, numberOfIterations=1)
+    if samplingFraction != 1.0:
+        tmpRegistration.SetMetricSamplingPercentage(samplingFraction)
+        tmpRegistration.SetMetricSamplingPercentage(tmpRegistration.RANDOM)
+
     if(inMask): tmpRegistration.SetMetricMovingMask(inMask)
     if(refMask): tmpRregistration.SetMetricFixedMask(refMask)
 
@@ -532,7 +536,7 @@ def imgNorm(img):
     return stats.GetSum()
 
 
-def imgMI(inImg, refImg, inMask=None, refMask=None, numBins=128):
+def imgMI(inImg, refImg, inMask=None, refMask=None, numBins=128, samplingFraction=1.0):
     """
     Compute mattes mutual information between input and reference images
     """
@@ -545,13 +549,13 @@ def imgMI(inImg, refImg, inMask=None, refMask=None, numBins=128):
     if inMask: imgCollaspeDimension(inMask)
     if refMask: imgCollaspeDimension(refMask)
 
-    tmpRegistration = createTmpRegistration(inMask, refMask, dimension=inImg.GetDimension())
+    tmpRegistration = createTmpRegistration(inMask, refMask, dimension=inImg.GetDimension(), samplingFraction=samplingFraction)
     tmpRegistration.SetMetricAsMattesMutualInformation(numBins)
     tmpRegistration.Execute( sitk.Cast(refImg,sitk.sitkFloat32),sitk.Cast(inImg, sitk.sitkFloat32) )
 
     return -tmpRegistration.GetMetricValue()
 
-def imgMSE(inImg, refImg, inMask=None, refMask=None):
+def imgMSE(inImg, refImg, inMask=None, refMask=None, samplingFraction=1.0):
     """
     Compute mean square error between input and reference images
     """
@@ -559,7 +563,7 @@ def imgMSE(inImg, refImg, inMask=None, refMask=None):
     refImg = imgCollaspeDimension(refImg)    
     if inMask: imgCollaspeDimension(inMask)
     if refMask: imgCollaspeDimension(refMask)
-    tmpRegistration = createTmpRegistration(inMask, refMask, dimension=refImg.GetDimension())
+    tmpRegistration = createTmpRegistration(inMask, refMask, dimension=refImg.GetDimension(), samplingFraction=1.0)
     tmpRegistration.SetMetricAsMeanSquares()
     tmpRegistration.Execute( sitk.Cast(refImg,sitk.sitkFloat32),sitk.Cast(inImg, sitk.sitkFloat32) )
 
@@ -1138,6 +1142,7 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
     # Deformably align in and ref images
     if(verbose): print("Deformable alignment")
     (field, invField) = imgMetamorphosisComposite(inImg, refImg, alphaList=lddmmAlphaList, scaleList=lddmmScaleList, useBias=False, useMI=useMI, verbose=verbose, iterations=iterations, inMask=inMask, refMask=refMask, outDirPath=lddmmDirPath)
+
     field = fieldApplyField(field, affineField)
     invField = fieldApplyField(invAffineField, invField)
     inImg = imgApplyField(initialInImg, field, size=refImg.GetSize())
@@ -1150,7 +1155,7 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
 
     # Remove padding from fields
     field = imgPad(field, -padding)
-    invField = imgPad(field, -padding)
+    invField = imgPad(invField, -padding)
 
     if outDirPath != "":
         imgWrite(field, outDirPath+"field.vtk")
@@ -1158,7 +1163,7 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
 
     return (field, invField)
 
-def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, numSlices=3):
+def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, flip=[0,0,0], numSlices=3):
     """
     Displays an image.  Only 2D images are supported for now
     """
@@ -1189,13 +1194,110 @@ def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, numSl
                 sliceIndex = [0]*img.GetDimension()
                 sliceIndex[2-i] = int(slice)
                 sliceImg = sitk.Extract(img, sliceSize, sliceIndex)
+                sliceArray = sitk.GetArrayFromImage(sliceImg)
+                if flip[i]: sliceArray = np.transpose(sliceArray)
 
                 plt.subplot(numSlices, img.GetDimension(),i+img.GetDimension()*j+1)
-                ax = plt.imshow(sitk.GetArrayFromImage(sliceImg), cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha)
+                ax = plt.imshow(sliceArray, cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha)
                 plt.axis('off')
     else: 
         raise Exception("Image dimension must be 2 or 3.")
 
     if newFig: plt.show()
 
+def imgShowResults(inImg, refImg, field, logPath=""):
+    numRows = 5
+    numCols = 3
+    defInImg = imgApplyField(inImg,field, size=refImg.GetSize())
+    checker = imgChecker(defInImg, refImg)
 
+    sliceList = []
+    for i in range(inImg.GetDimension()):
+        step=[5]*dimension
+        step[2-i] = None
+        grid = imgGrid(inImg.GetSize(), inImg.GetSpacing(), step=step, field=field)
+
+        sliceList.append(imgSlices(grid,flip=[0,1,1])[i])
+    fig = plt.figure()
+    imgShowResultsRow(inImg, numRows,numCols,0, title="$I_0$")
+    imgShowResultsRow(defInImg, numRows,numCols,1, title="$I_0 \circ \phi_{10}$")
+    imgShowResultsRow(checker, numRows, numCols,2, title="$I_0$ and $I_1$\n Checker")
+    imgShowResultsRow(refImg, numRows,numCols,3, title="$I_1$")
+    imgShowResultsRow(sliceList, numRows, numCols,4, title="$\phi_{10}$")
+    fig.subplots_adjust(hspace=0.05, wspace=0)
+    plt.show()
+
+def imgShowResultsRow(img, numRows=1, numCols=3, rowIndex=0, title=""):    
+    if type(img) is list:
+        sliceImgList = img
+    else:
+        sliceImgList = imgSlices(img,flip=[0,1,1])
+
+    for (i,sliceImg) in enumerate(sliceImgList):        
+        ax = plt.subplot(numRows,numCols,rowIndex*numCols+i+1)
+        plt.imshow(sitk.GetArrayFromImage(sliceImg), cmap=plt.cm.gray, aspect='auto')
+        ax.set_yticklabels([])
+        ax.set_xticklabels([])
+        if i == 0: plt.ylabel(title, rotation=0, labelpad=30)
+        #plt.axis('off')
+
+def imgGrid(size, spacing, step=[10,10,10],field=None):
+    """
+    Creates a grid image using with specified size and spacing with distance between lines defined by step.
+    If step is None along a dimention no grid lines will be plotted.
+    For example step=[5,5,None] will result in a grid image with grid lines every 5 voxels in the x and y directions but no grid lines in the z direction.
+    An optinal displacement field can be applied to the grid as well.
+    """
+
+    if not(isIterable(size)): raise Exception("size must be a list.")
+    if not(isIterable(spacing)): raise Exception("spacing must be a list.")
+    if not(isIterable(step)): raise Exception("step must be a list.")
+    if len(size) != len(spacing): raise Exception("len(size) != len(spacing)")
+    if len(size) != len(step): raiseException("len(size) != len(step)")
+
+    dimension = len(size)
+    offset = [0]*dimension
+    
+    for i in range(dimension):
+        if step[i] is None: 
+            step[i] = size[i]+2
+            offset[i] = -1
+
+    gridSource = sitk.GridImageSource()
+    gridSource.SetSpacing(spacing)
+    gridSource.SetGridOffset(np.array(offset)*np.array(spacing))
+    gridSource.SetOrigin([0]*dimension)
+    gridSource.SetSize(np.array(size))
+    gridSource.SetGridSpacing(np.array(step)*np.array(spacing))
+    gridSource.SetScale(255)
+    gridSource.SetSigma(np.array(spacing)/2)
+    grid = gridSource.Execute()
+
+    if not(field is None):
+        grid = sitk.WrapPad(grid,[20]*dimension, [20]*dimension)
+        grid = imgApplyField(grid, field, size=size)
+
+    return grid
+
+
+def imgSlices(img, flip=[0,0,0], numSlices=1):
+   size = img.GetSize()
+   sliceImgList = []
+   for i in range(img.GetDimension()):
+       start = size[2-i]/(numSlices+1)
+       sliceList = np.linspace(start, size[2-i]-start, numSlices)
+       sliceSize = list(size)
+       sliceSize[2-i] = 0
+       
+       for (j, slice) in enumerate(sliceList):
+           sliceIndex = [0]*img.GetDimension()
+           sliceIndex[2-i] = int(slice)
+           sliceImg = sitk.Extract(img, sliceSize, sliceIndex)
+           
+           if flip[i]:
+               sliceImgDirection = sliceImg.GetDirection()
+               sliceImg = sitk.PermuteAxesImageFilter().Execute(sliceImg, range(sliceImg.GetDimension()-1,-1,-1))
+               sliceImg.SetDirection(sliceImgDirection)
+           sliceImgList.append(sliceImg)
+
+   return sliceImgList

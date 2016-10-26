@@ -557,7 +557,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     // Generate grid
     typedef itk::BSplineKernelFunction<0>  KernelType;
     typename KernelType::Pointer kernelFunction = KernelType::New();
-    unsigned int gridStep = 5; // Space in voxels between grid lines
+    unsigned int gridStep = 10; // Space in voxels between grid lines
 
     typedef itk::GridImageSource<ImageType> GridSourceType;
     typename GridSourceType::Pointer gridSource = GridSourceType::New();
