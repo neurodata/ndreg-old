@@ -1,0 +1,43 @@
+\documentclass{beamer}
+\usepackage{verbatim} % comment enviroment
+\graphicspath{{./images/}}
+
+\newcommand{\dataframe}[1]
+{
+  \begin{frame}
+   \frametitle{#1}
+   \begin{center}
+    \includegraphics[height=0.25\textheight]{#1Plot.png} \\
+    \includegraphics[height=0.25\textheight]{#1Singlescale.png} \\
+    \includegraphics[height=0.25\textheight]{#1Multiscale.png} \\
+   \end{center}
+  \end{frame}
+}
+
+\begin{document}
+ \begin{frame}
+  \begin{itemize}
+   \item Ran two LDDMM experiments with $\alpha = 0.02$
+    \begin{itemize}
+     \item \textbf{Multi-Scale} experiment ran at 800$\mu m$, 400$\mu m$, 200$\mu m$, 100$\mu m$ and then 50$\mu m$ level
+     \item \textbf{Single-Scale} experment ran at 50 $\mu m$ level.
+    \end{itemize}
+   \item Mutual Information (MI) was recorded at the end of each resolution level
+   \item Mutual Information has been normalized to $[0,1.0]$
+    \begin{itemize}
+     \item 1.0 = Worst case (No registration)
+     \item 0 = Best case  (Template = Target)
+    \end{itemize}
+  \end{itemize}
+ \end{frame}
+ \dataframe{Cocaine174}
+ \dataframe{Cocaine175}
+ \dataframe{Cocaine178}
+ %\dataframe{Control181}
+ \dataframe{Control182}
+ \dataframe{Control189}
+ \dataframe{Control258}
+ \dataframe{Fear187}
+ \dataframe{Fear197}
+ \dataframe{Fear199}
+\end{document}

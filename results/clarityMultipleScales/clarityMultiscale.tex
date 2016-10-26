@@ -1,0 +1,29 @@
+\documentclass{beamer}
+\usepackage{verbatim} % comment enviroment
+\graphicspath{{./images/}}
+
+\newcommand{\dataframe}[1]
+{
+ \begin{frame}
+  \frametitle{#1}
+  \begin{center}
+   \includegraphics[height=0.15\textheight]{#1_Image50um_Grid50um.png}\\
+   \includegraphics[height=0.15\textheight]{#1_Image50um_Grid100um.png}\\
+   \includegraphics[height=0.15\textheight]{#1_Image50um_Grid200um.png}\\
+   \includegraphics[height=0.15\textheight]{#1_Image50um_Grid400um.png}\\
+   \includegraphics[height=0.15\textheight]{#1_Image50um_Grid800um.png}\\
+  \end{center}
+ \end{frame}
+}
+\begin{document}
+ \dataframe{Cocaine174}
+ \dataframe{Cocaine175}
+ \dataframe{Cocaine178}
+ \dataframe{Control181}
+ \dataframe{Control182}
+ \dataframe{Control189}
+ \dataframe{Control258}
+ \dataframe{Fear187}
+ \dataframe{Fear197}
+ \dataframe{Fear199}
+\end{document}

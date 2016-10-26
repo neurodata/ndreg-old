@@ -1,0 +1,43 @@
+\documentclass[10pt]{beamer}
+\usepackage{verbatim}
+\graphicspath{{./images/}}
+\newcommand{\jacobianframe}[2]
+{
+ \begin{frame}
+
+  \begin{columns}
+   \begin{column}{0.7\textwidth}
+    \includegraphics[width=\textwidth]{#1Jacobian.png} \\
+    Average Volume Change: #2
+   \end{column}
+   \begin{column}{0.3\textwidth}
+    \includegraphics[width=\textwidth]{#1JacobianHistogram.png}
+   \end{column}
+  \end{columns}
+ \end{frame}
+}
+
+\begin{document}
+ \begin{frame}
+  \frametitle{Jacobian Determinant}
+  \begin{itemize}
+   \item Log of \emph{Jacobian Determinant} of LDDMM mapping, $\log |D\phi_{10}|$, measures local volume change
+    \begin{itemize}
+    \item $>0$ means ARA would need to expand to match CLARITY brain
+    \item $<0$ means ARA would need to contract to match CLARITY brain
+    \end{itemize}
+   \item Following images show the $\log |D\phi_{10}|$ overlaid on coronal, axial and sagittal CLARITY slices
+   \item In general most ARA regions contract to match CLARITY brain
+   \item Exception is in olfactory bulbs which usually expand during registation
+  \end{itemize}
+ \end{frame}
+ \jacobianframe{Cocaine174}{-13.9\%}
+ \jacobianframe{Cocaine175}{2.7\%}
+ \jacobianframe{Cocaine178}{-10.3\%}
+ \jacobianframe{Control181}{-14.1\%}
+ \jacobianframe{Control182}{-25.5\%}
+ \jacobianframe{Control239}{-35.1\%}
+ \jacobianframe{Control258}{-30.5\%}
+ \jacobianframe{Fear197}{-17.6\%}
+ \jacobianframe{Fear199}{-43.3\%}
+\end{document}
