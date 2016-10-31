@@ -6,7 +6,9 @@ import SimpleITK as sitk
 import ndio.remote.neurodata as neurodata
 import os, math, sys, subprocess, tempfile, shutil, requests
 import matplotlib.pyplot as plt
+from matplotlib.ticker import ScalarFormatter
 from itertools import product
+
 
 dimension = 3
 vectorComponentType = sitk.sitkFloat32
@@ -1204,7 +1206,7 @@ def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, flip=
         raise Exception("Image dimension must be 2 or 3.")
 
     if newFig: plt.show()
-
+"""
 def imgShowResults(inImg, refImg, field, logPath=""):
     numRows = 5
     numCols = 3
@@ -1240,7 +1242,7 @@ def imgShowResultsRow(img, numRows=1, numCols=3, rowIndex=0, title=""):
         ax.set_xticklabels([])
         if i == 0: plt.ylabel(title, rotation=0, labelpad=30)
         #plt.axis('off')
-
+"""
 def imgGrid(size, spacing, step=[10,10,10],field=None):
     """
     Creates a grid image using with specified size and spacing with distance between lines defined by step.
@@ -1270,7 +1272,7 @@ def imgGrid(size, spacing, step=[10,10,10],field=None):
     gridSource.SetSize(np.array(size))
     gridSource.SetGridSpacing(np.array(step)*np.array(spacing))
     gridSource.SetScale(255)
-    gridSource.SetSigma(np.array(spacing)/2)
+    gridSource.SetSigma(2*np.array(spacing))
     grid = gridSource.Execute()
 
     if not(field is None):
@@ -1301,3 +1303,147 @@ def imgSlices(img, flip=[0,0,0], numSlices=1):
            sliceImgList.append(sliceImg)
 
    return sliceImgList
+
+def imgPercentile(img, percentile):
+    if percentile < 0.0 or percentile > 1.0:
+        raise Exception("Percentile should be between 0.0 and 1.0")
+
+    (values, bins) = np.histogram(sitk.GetArrayFromImage(img), bins=255)
+    cumValues = np.cumsum(values).astype(float)
+    cumValues = (cumValues - cumValues.min()) / cumValues.ptp()
+
+    index = np.argmax(cumValues>percentile)-1
+    value = bins[index]
+    return value
+
+def imgMetamorphosisSlicePlotterRow(img, numRows=1, numCols=3, rowIndex=0, title="", vmin=None, vmax=None):    
+    if type(img) is list:
+        sliceImgList = img
+    else:
+        if vmax is None or (vmin is None):
+            stats = sitk.StatisticsImageFilter()
+            stats.Execute(img)
+            if vmin is None: vmin = stats.GetMinimum()
+            if vmax is None: vmax = stats.GetMaximum()
+        sliceImgList = imgSlices(img,flip=[0,1,1])
+
+    for (i,sliceImg) in enumerate(sliceImgList):        
+        ax = plt.subplot(numRows,numCols,rowIndex*numCols+i+1)
+        plt.imshow(sitk.GetArrayFromImage(sliceImg), cmap=plt.cm.gray, aspect='auto', vmax=vmax, vmin=vmin)
+        ax.set_yticks([])
+        ax.set_xticks([])
+        if i == 0: plt.ylabel(title, rotation=0, labelpad=40)
+
+
+def imgMetamorphosisSlicePlotter(inImg, refImg, field):
+    numRows = 5
+    numCols = 3
+    defInImg = imgApplyField(inImg,field, size=refImg.GetSize())
+    inImg = imgApplyAffine(inImg, [1,0,0, 0,1,0, 0,0,1, 0,0,0], size=refImg.GetSize())
+    checker = imgChecker(defInImg, refImg)
+
+    sliceList = []
+    for i in range(inImg.GetDimension()):
+        step=[20]*dimension
+        step[2-i] = None
+        grid = imgGrid(inImg.GetSize(), inImg.GetSpacing(), step=step, field=field)
+
+        sliceList.append(imgSlices(grid,flip=[0,1,1])[i])
+
+    imgMetamorphosisSlicePlotterRow(inImg, numRows,numCols,0, title="$I_0$", vmax=imgPercentile(inImg,0.99))
+    imgMetamorphosisSlicePlotterRow(defInImg, numRows,numCols,1, title="$I(1)$", vmax=imgPercentile(defInImg,0.99))
+    imgMetamorphosisSlicePlotterRow(checker, numRows, numCols,2, title="$I(1)$ and $I_1$\n Checker", vmax=imgPercentile(checker, 0.99))
+    imgMetamorphosisSlicePlotterRow(refImg, numRows,numCols,3, title="$I_1$", vmax=imgPercentile(refImg,0.99))
+    imgMetamorphosisSlicePlotterRow(sliceList, numRows, numCols,4, title="$\phi_{10}$")
+    plt.gcf().subplots_adjust(hspace=0.1, wspace=0.025)
+
+def imgMetamorphosisLogPlotter(logPathList, labelList=None, useLog=False, useTime=False):
+    if not(isIterable(logPathList)): raise Exception("logPathList should be a list.")
+
+    if labelList is None:
+        labelList = ["Step {0}".format(i) for i in range(1,len(logPathList)+1)] 
+    else:
+        if not(isIterable(labelList)): raise Exception("labelList should be a list.")
+        if len(labelList) != len(logPathList): raise Exception("Number of labels should equal number of log files.")
+    
+    initialPercent = 1.0
+    initialX = 0
+    levelXList = []
+    levelPercentList = []
+    for (i,logPath) in enumerate(logPathList):
+        percentList = imgMetamorphosisLogParser(logPath)[:,1] * initialPercent
+        numIterations = len(percentList)
+        if useTime:
+            time = float(txtRead(logPath).split("Time = ")[1].split("s ")[0])/60.0 # Parse run time from log and convert to minutes
+            xList = np.linspace(0,time,numIterations+1)[1:] + initialX
+        else:
+            xList = np.arange(0, numIterations) + initialX
+                
+        if not useLog:
+            if i == 0:
+                xList = np.array([initialX] + list(xList))
+                percentList = np.array([initialPercent] + list(percentList))
+        
+        levelXList +=[xList]
+        levelPercentList +=[percentList]
+
+        initialPercent = percentList[-1]
+        initialX = xList[-1]
+
+    for i in range(len(levelXList)):
+        if i > 0:
+            xList = np.concatenate((levelXList[i-1][-1:],levelXList[i]))
+            percentList = np.concatenate((levelPercentList[i-1][-1:],levelPercentList[i]))
+
+        else:
+            xList = levelXList[i]
+            percentList = levelPercentList[i]
+
+            
+        plt.plot(xList, percentList, label=labelList[i], linewidth=1.5)
+
+    # Add plot annotations
+    if useTime:
+        plt.xlabel("Time (Minutes)")
+    else:
+        plt.xlabel("Iteration")
+
+    plt.ylabel("Normalized $M(I(1), I_1)$")
+    plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+    if useLog: plt.xscale("log")
+    ax = plt.gca()
+    ax.xaxis.set_major_formatter(ScalarFormatter())
+    plt.autoscale(enable=True, axis='x', tight=True)
+
+    # Fix maximum y to 1.0
+    ylim = list(ax.get_ylim())
+    ylim[1] = 1.0
+    ax.set_ylim(ylim)
+
+
+def imgMetamorphosisLogParser(logPath):
+    logText = txtRead(logPath)
+    lineList = logText.split("\n")
+    
+    for (lineIndex,line) in enumerate(lineList):
+        if "E, E_velocity, E_rate, E_image" in line: 
+            break
+    
+    dataArray = np.empty((0,5), float)
+    for line in lineList[lineIndex:]:
+        if "E =" in line: break
+
+        try:
+            (iterationString, dataString) = line.split(".\t")
+        except:
+            continue
+       
+        (energyString, velocityEnergyString, rateEnergyString, imageEnergyString, learningRateString) = (dataString.split(","))
+        (energy, velocityEnergy, rateEnergy, learningRate) = map(float,[energyString, velocityEnergyString, rateEnergyString, learningRateString])
+        (imageEnergy, imageEnergyPercent) = map(float,imageEnergyString.replace("(","").replace("%)","").split() )
+
+        imageEnergy = float(imageEnergyString.split(" (")[0])
+        dataRow = np.array([[energy,imageEnergyPercent/100,velocityEnergy,learningRate,rateEnergy]])
+        dataArray = np.concatenate((dataArray,dataRow),axis=0)
+
+    return dataArray
