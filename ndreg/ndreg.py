@@ -790,7 +790,7 @@ def fieldApplyField(inField, field):
     transform.SetDisplacementField(field)
     transform.SetInterpolator(sitk.sitkLinear)
     
-    # Combine thransforms
+    # Combine transforms
     outTransform = sitk.Transform()
     outTransform.AddTransform(transform)
     outTransform.AddTransform(inTransform)
