@@ -3,8 +3,13 @@ NeuroData's registration library, built in python using ITK
 
 Submit bug reports [here](https://github.com/openconnectome/ndreg/issues/new).
 
+# Installation
+## Easy way
+The easiest way to use ndreg is through [docker](https://hub.docker.com/r/neurodata/ndreg/)
 
-## Installating dependances on Ubuntu 16.04 and later
+## Hard way
+More advanced users can build ndreg from scratch
+### Installating dependances on Ubuntu 16.04 and later
  * Install dependancies
 
 ```bash
@@ -12,7 +17,7 @@ sudo apt-get -y install cmake python-numpy libinsighttoolkit4-dev libfftw3-dev
 ```
  * Proceded to **Installing ndreg**
 
-## Installing dependances other linux distributions
+### Installing dependances other linux distributions
  * Build and install ITK 4.10.0 or later
  
  ```bash
@@ -45,10 +50,11 @@ sudo apt-get -y install cmake python-numpy libinsighttoolkit4-dev libfftw3-dev
   ```
   * Proceded to **Installing ndreg**
 
-## Installing ndreg
+### Installing ndreg
 ```
 git clone https://github.com/neurodata/ndreg.git
 cd ndreg
 cmake .
 make && sudo make install
 ```
+
