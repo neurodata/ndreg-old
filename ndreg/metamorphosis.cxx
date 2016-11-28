@@ -20,7 +20,7 @@
 #include "itkMeanSquaresImageToImageMetricv4.h"
 #include "itkCheckerBoardImageFilter.h"
 #include "itkMetamorphosisImageRegistrationMethodv4.h"
-
+#include "itkWrapExtrapolateImageFunction.h"
 using namespace std;
 
 typedef itk::CommandLineArgumentParser  ParserType;
@@ -44,6 +44,7 @@ int main(int argc, char* argv[])
     cerr<<"\t\t  --invfield OutputInverseDisplacementFieldPath"<<endl;
     cerr<<"\t\t  --bias OutputBiasPath"<<endl;
     cerr<<"\t\t  --grid OutputGridPath"<<endl;
+    cerr<<"\t\t  --gridstep GridStep"<<endl;
     cerr<<"\t\t  --checker OutputCheckerBoardPath"<<endl;
     cerr<<"\t\t  --scale Scale"<<endl;
     cerr<<"\t\t  --alpha RegistrationSmoothness"<<endl;
@@ -354,6 +355,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   transform->SetUpperTimeBound(0.0);
   transform->IntegrateVelocityField();
 
+  typedef itk::WrapExtrapolateImageFunction<ImageType, double>         ExtrapolatorType;
   typedef typename TransformType::ScalarType ScalarType;
   typedef itk::ResampleImageFilter<ImageType, ImageType, ScalarType>   OutputResamplerType;
   typename OutputResamplerType::Pointer outputResampler = OutputResamplerType::New();
@@ -361,6 +363,7 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
   outputResampler->SetTransform(transform); // \phi_{10}
   outputResampler->UseReferenceImageOn();
   outputResampler->SetReferenceImage(fixedImage);
+  outputResampler->SetExtrapolator(ExtrapolatorType::New());
   outputResampler->Update();
 
  
@@ -557,7 +560,8 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
     // Generate grid
     typedef itk::BSplineKernelFunction<0>  KernelType;
     typename KernelType::Pointer kernelFunction = KernelType::New();
-    unsigned int gridStep = 10; // Space in voxels between grid lines
+    unsigned int gridStep = 5; // Default space in voxels between grid lines
+    parser->GetCommandLineArgument("--gridstep",gridStep);
 
     typedef itk::GridImageSource<ImageType> GridSourceType;
     typename GridSourceType::Pointer gridSource = GridSourceType::New();
