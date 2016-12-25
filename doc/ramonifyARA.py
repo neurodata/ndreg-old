@@ -25,7 +25,11 @@ root = jsonDict['msg'][0]
 """
 ...we define a recursive function ...
 """
+#leafList = []
 def getChildrenNames(parent, childrenNames={}):
+    #if len(parent['children']) == 0:
+    #    leafList.append(parent['id'])
+
     for childIndex in range(len(parent['children'])):
         child = parent['children'][childIndex]
         childrenNames[child['id']] = child['name']
@@ -36,13 +40,21 @@ def getChildrenNames(parent, childrenNames={}):
 """
 ... and collect all of the region names in a dictionary with the "id" field as keys.
 """
+
+
 regionDict = getChildrenNames(root)
+#print(leafList)
+#for key in regionDict.keys():
+#    print('{0}, "{1}"'.format(key, regionDict[key]))
+#print(regionDict)
+#sys.exit()
+
 """
 Next we RAMONify the data
 """
-token = "ara_ccf3"
-channel = "annotation2"
-nd = neurodata()
+token = "ara3_to_AutA"
+channel = "annotation_draft"
+nd = neurodata(hostname='synaptomes.neurodata.io/nd/')
 
 for regionId in regionDict.keys():
     regionName = regionDict[regionId]

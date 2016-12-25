@@ -20,8 +20,9 @@
 #include "itkExtractImageFilter.h"
 #include "itkWrapExtrapolateImageFunction.h"
 #include "itkNearestNeighborInterpolateImageFunction.h"
+#include "itkImageMaskSpatialObject.h"
 #include "itkSpatialObjectToImageFilter.h"
-//#include "itkContinuousIndex.h"
+
 namespace itk
 {
 template<class TInputImage, class TOutputImage>
@@ -42,7 +43,7 @@ public:
 
   typedef TOutputImage OutputImageType;
   typedef typename OutputImageType::PixelType       OutputPixelType;
-  typedef itk::ImageRegionIterator<OutputImageType> OutputImageIteratorType;
+  typedef ImageRegionIterator<OutputImageType> OutputImageIteratorType;
 
   itkSetMacro(Constant, OutputPixelType);
   itkGetConstMacro(Constant, OutputPixelType);
@@ -120,7 +121,7 @@ public:
 
   typedef Image<unsigned char, ImageDimension>      MaskImageType;
   typedef typename MaskImageType::Pointer           MaskImagePointer;
-  typedef itk::ImageMaskSpatialObject<ImageDimension>        MaskType;  
+  typedef ImageMaskSpatialObject<ImageDimension>        MaskType;  
   typedef typename MaskType::Pointer                MaskPointer;
   typedef typename MaskType::ConstPointer           MaskConstPointer;
 
