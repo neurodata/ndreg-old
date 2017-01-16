@@ -38,8 +38,11 @@ sitkToNpDataTypes = {sitk.sitkUInt8: np.uint8,
 
 ndregDirPath = os.path.dirname(os.path.realpath(__file__))+"/"
 ndregTranslation = 0
-ndregRigid = 1
-ndregAffine = 2 
+ndregScale = 1 
+ndregRigid = 2 #1
+ndregAffine = 3 #2
+
+
 
 def isIterable(obj):
     """
@@ -122,11 +125,12 @@ def imgRead(path):
 
     return inImg
 
-def imgDownload(token, channel="", resolution=0, server="openconnecto.me", size=[]):
+def imgDownload(token, channel="", resolution=0, server="openconnecto.me", size=[], start=[]):
     """
     Download image with given token from given server at given resolution.
     If channel isn't specified the first channel is downloaded.
     """
+    # TODO: Fix size and start parameters
     # Create neurodata instance
     nd = neurodata(suppress_warnings=True)
     nd.hostname = server
@@ -146,11 +150,11 @@ def imgDownload(token, channel="", resolution=0, server="openconnecto.me", size=
     spacing = [x * 1e-6 for x in spacingNm] # Convert spacing to mm
 
     if size == []: size = nd.get_image_size(token, resolution)
-    offset = nd.get_image_offset(token, resolution)
+    if start == []: start = nd.get_image_offset(token, resolution)
     dataType = metadata['channels'][channel]['datatype']
 
     # Download all image data from specified channel
-    array = nd.get_cutout(token, channel, offset[0], size[0], offset[1], size[1], offset[2], size[2], resolution)
+    array = nd.get_cutout(token, channel, start[0], size[0], start[1], size[1], start[2], size[2], resolution)
     
     # Cast downloaded image to server's data type
     img = sitk.Cast(sitk.GetImageFromArray(array),ndToSitkDataTypes[dataType]) # convert numpy array to sitk image
@@ -772,13 +776,23 @@ def affineApplyAffine(inAffine, affine):
     outAffine = A.flatten().tolist() + b.flatten().tolist()
     return outAffine
 
-def fieldApplyField(inField, field):
+def fieldApplyField(inField, field, size=[], spacing=[]):
     """ outField = inField \circ field """
     inField = sitk.Cast(inField, sitk.sitkVectorFloat64)
     field = sitk.Cast(field, sitk.sitkVectorFloat64)
-    
-    size = list(inField.GetSize())
-    spacing = list(inField.GetSpacing())
+    inDimension = inField.GetDimension()    
+
+    if spacing == []:
+        spacing = list(inField.GetSpacing())
+    else:
+        if len(spacing) != inDimension: raise Exception("spacing must have length {0}.".format(inDimension))
+
+    # Set size
+    if size == []:
+        # Compute size to contain entire output image
+        size = list(inField.GetSize())
+    else:
+       if len(size) != inDimension: raise Exception("size must have length {0}.".format(inDimension))
 
     # Create transform for input field
     inTransform = sitk.DisplacementFieldTransform(dimension)
@@ -863,7 +877,7 @@ def imgChecker(inImg, refImg, useHM=True, pattern=[4]*dimension):
 
     return sitk.CheckerBoardImageFilter().Execute(inImg, refImg,pattern)
 
-def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False, iterations=1000, inMask=None, refMask=None, verbose=False):
+def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False, numBins=32, iterations=1000, inMask=None, refMask=None, verbose=False):
     """
     Perform Affine Registration between input image and reference image
     """
@@ -883,10 +897,10 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     # Set transform
     try:
         rigidTransformList = [sitk.Similarity2DTransform(), sitk.Similarity3DTransform()]
-        transform = [sitk.TranslationTransform(inDimension), rigidTransformList[inDimension-2], sitk.AffineTransform(inDimension)][method]
+        transform = [sitk.TranslationTransform(inDimension), sitk.ScaleTransform(inDimension), rigidTransformList[inDimension-2], sitk.AffineTransform(inDimension)][method]
     except:
         raise Exception("method is invalid")
-
+    
     # Do registration
     registration = sitk.ImageRegistrationMethod()
     registration.SetInterpolator(interpolator)
@@ -896,8 +910,7 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     if(refMask): registration.SetMetricFixedMask(refMask)
     
     if useMI:
-        numHistogramBins = 64
-        registration.SetMetricAsMattesMutualInformation(numHistogramBins)
+        registration.SetMetricAsMattesMutualInformation(numBins)
  
     else:
         registration.SetMetricAsMeanSquares()
@@ -913,9 +926,15 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,0.25),
                          sitk.SmoothingRecursiveGaussian(inImg,0.25) )
 
+
+
+
+    idAffine = list(sitk.AffineTransform(inDimension).GetParameters())    
+
     if method == ndregTranslation:
-        idAffine = list(sitk.AffineTransform(inDimension).GetParameters())
         affine = idAffine[0:inDimension**2] + list(transform.GetOffset())
+    elif method == ndregScale:
+        affine = np.diag(transform.GetScale()).flatten().tolist() + idAffine[inDimension**2:]
     else:
         affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
     return affine
@@ -937,8 +956,11 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
         if(inMask): imgWrite(inMask, outDirPath+"0_initial/inMask.img")
         txtWriteList(compositeAffine, outDirPath+"0_initial/affine.txt")
 
-    methodList = [ndregTranslation, ndregRigid, ndregAffine]
-    methodNameList = ["translation", "rigid", "affine"]
+    methodList = [ndregTranslation, ndregScale, ndregRigid, ndregAffine]
+    methodNameList = ["translation", "scale", "rigid", "affine"]
+    ###methodList = [ndregTranslation, ndregScale, ndregAffine]
+    ###methodNameList = ["translation", "scale", "affine"]
+
     for (step, method) in enumerate(methodList):
         methodName = methodNameList[step]
         stepDirPath = outDirPath + str(step+1) + "_" + methodName + "/"
@@ -1079,7 +1101,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
             compositeInvField = invField
         else:
             compositeField = fieldApplyField(field, compositeField)
-            compositeInvField = fieldApplyField(compositeInvField, invField)
+            compositeInvField = fieldApplyField(compositeInvField, invField, size=field.GetSize(), spacing=field.GetSpacing()) #force invField to be same size as field
 
             if outDirPath != "":
                 fieldPath = stepDirPath+"field.vtk"
