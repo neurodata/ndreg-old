@@ -484,11 +484,18 @@ IntegrateVelocity(double lowerTimeBound, double upperTimeBound, unsigned int num
   typedef TimeVaryingVelocityFieldSemiLagrangianIntegrationImageFilter<TimeVaryingFieldType, FieldType> IntegratorType;
   typename IntegratorType::Pointer integrator = IntegratorType::New();
   integrator->SetInput(this->m_OutputTransform->GetVelocityField() );
+  integrator->SetInitialDiffeomorphism(initialField);
   integrator->SetVelocityFieldInterpolator(this->m_OutputTransform->GetModifiableVelocityFieldInterpolator());
   integrator->SetLowerTimeBound(lowerTimeBound);
   integrator->SetUpperTimeBound(upperTimeBound);
   integrator->SetNumberOfIntegrationSteps(numberOfIntegrationSteps);
   integrator->Update();
+
+  /*
+  FieldPointer displacement = integrator->GetOutput();
+  displacement->DisconnectPipeline();
+  this->m_OutputTransform->SetDisplacementField(displacement);
+  */
   this->m_OutputTransform->SetDisplacementField(integrator->GetOutput());
 }
 
@@ -529,10 +536,7 @@ IntegrateRate()
     adder->SetInput1(multiplier->GetOutput());      // r(j-1) \Delta t
     adder->SetInput2(m_Bias);                       // B(j-1)
 
-    this->m_OutputTransform->SetNumberOfIntegrationSteps(2);
-    this->m_OutputTransform->SetLowerTimeBound(j * m_TimeStep);     // t_j
-    this->m_OutputTransform->SetUpperTimeBound((j-1) * m_TimeStep); // t_{j-1}
-    this->m_OutputTransform->IntegrateVelocityField();
+    IntegrateVelocity(j*m_TimeStep, (j-1)*m_TimeStep, 1);
 
     typedef WrapExtrapolateImageFunction<VirtualImageType, RealType>         ExtrapolatorType;
     typedef ResampleImageFilter<VirtualImageType,VirtualImageType,RealType>  ResamplerType;
@@ -671,10 +675,8 @@ UpdateControls()
   typename ImageJoinerType::Pointer rateJoiner = ImageJoinerType::New();
 
   // For each time step
-  for(unsigned int j = 0; j < m_NumberOfTimeSteps; j++)
+  for(int j = m_NumberOfTimeSteps-1; j >= 0; j--)
   {
-    double t = j * m_TimeStep;
-
     // Compute reverse mapping, \phi_{t1} by integrating velocity field, v(t).
     if(j == m_NumberOfTimeSteps-1)
     {
@@ -682,17 +684,10 @@ UpdateControls()
     }
     else
     {
-      IntegrateVelocity(t, 1.0, (m_NumberOfTimeSteps-1-j)+2 );
-
-      /*
-      this->m_OutputTransform->SetNumberOfIntegrationSteps((m_NumberOfTimeSteps-1-j) + 2);
-      this->m_OutputTransform->SetLowerTimeBound(t);
-      this->m_OutputTransform->SetUpperTimeBound(1.0);
-      this->m_OutputTransform->IntegrateVelocityField();
-      */
+      IntegrateVelocity(j*m_TimeStep, (j+1)*m_TimeStep, 1, this->m_OutputTransform->GetDisplacementField());
     }
-    
-    velocityJoiner->PushBackInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), true)); // p(t) \nabla I(t) =  p(1, \phi{t1})  \nabla I(1, \phi{t1})
+
+    velocityJoiner->PushFrontInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), true)); // p(t) \nabla I(t) =  p(1, \phi{t1})  \nabla I(1, \phi{t1})
 
     if(m_UseBias)
     {
@@ -702,7 +697,7 @@ UpdateControls()
       componentExtractor->SetIndex(0);
       componentExtractor->Update();
 
-      rateJoiner->PushBackInput(componentExtractor->GetOutput()); // p(t)
+      rateJoiner->PushFrontInput(componentExtractor->GetOutput()); // p(t)
     }
 
   } // end for j
@@ -757,14 +752,6 @@ UpdateControls()
     this->m_OutputTransform->SetVelocityField(adder2->GetOutput());  // v = v - \epsilon \nabla_V E
 
     // Compute forward mapping \phi{10} by integrating velocity field v(t)
-
-
-    /*
-    this->m_OutputTransform->SetNumberOfIntegrationSteps((m_NumberOfTimeSteps -1) + 2);
-    this->m_OutputTransform->SetLowerTimeBound(1.0);
-    this->m_OutputTransform->SetUpperTimeBound(0.0);
-    this->m_OutputTransform->IntegrateVelocityField();
-    */
     IntegrateVelocity(1.0, 0.0, (m_NumberOfTimeSteps-1)+2 );
     typedef DisplacementFieldTransform<RealType,ImageDimension> DisplacementFieldTransformType;
     typename DisplacementFieldTransformType::Pointer transform = DisplacementFieldTransformType::New();
