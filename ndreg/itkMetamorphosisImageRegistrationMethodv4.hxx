@@ -475,6 +475,24 @@ GetEnergy()
   return m_Energy;
 }
 
+
+template<typename TFixedImage, typename TMovingImage>
+void
+MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
+IntegrateVelocity(double lowerTimeBound, double upperTimeBound, unsigned int numberOfIntegrationSteps, FieldPointer initialField)
+{
+  typedef TimeVaryingVelocityFieldSemiLagrangianIntegrationImageFilter<TimeVaryingFieldType, FieldType> IntegratorType;
+  typename IntegratorType::Pointer integrator = IntegratorType::New();
+  integrator->SetInput(this->m_OutputTransform->GetVelocityField() );
+  integrator->SetVelocityFieldInterpolator(this->m_OutputTransform->GetModifiableVelocityFieldInterpolator());
+  integrator->SetLowerTimeBound(lowerTimeBound);
+  integrator->SetUpperTimeBound(upperTimeBound);
+  integrator->SetNumberOfIntegrationSteps(numberOfIntegrationSteps);
+  integrator->Update();
+  this->m_OutputTransform->SetDisplacementField(integrator->GetOutput());
+}
+
+
 template<typename TFixedImage, typename TMovingImage>
 void
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
@@ -664,10 +682,14 @@ UpdateControls()
     }
     else
     {
+      IntegrateVelocity(t, 1.0, (m_NumberOfTimeSteps-1-j)+2 );
+
+      /*
       this->m_OutputTransform->SetNumberOfIntegrationSteps((m_NumberOfTimeSteps-1-j) + 2);
       this->m_OutputTransform->SetLowerTimeBound(t);
       this->m_OutputTransform->SetUpperTimeBound(1.0);
       this->m_OutputTransform->IntegrateVelocityField();
+      */
     }
     
     velocityJoiner->PushBackInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), true)); // p(t) \nabla I(t) =  p(1, \phi{t1})  \nabla I(1, \phi{t1})
@@ -735,11 +757,15 @@ UpdateControls()
     this->m_OutputTransform->SetVelocityField(adder2->GetOutput());  // v = v - \epsilon \nabla_V E
 
     // Compute forward mapping \phi{10} by integrating velocity field v(t)
+
+
+    /*
     this->m_OutputTransform->SetNumberOfIntegrationSteps((m_NumberOfTimeSteps -1) + 2);
     this->m_OutputTransform->SetLowerTimeBound(1.0);
     this->m_OutputTransform->SetUpperTimeBound(0.0);
     this->m_OutputTransform->IntegrateVelocityField();
-
+    */
+    IntegrateVelocity(1.0, 0.0, (m_NumberOfTimeSteps-1)+2 );
     typedef DisplacementFieldTransform<RealType,ImageDimension> DisplacementFieldTransformType;
     typename DisplacementFieldTransformType::Pointer transform = DisplacementFieldTransformType::New();
     transform->SetDisplacementField(this->m_OutputTransform->GetDisplacementField()); // \phi_{t1}

@@ -2,6 +2,7 @@
 #define __itkMetamorphosisImageRegistrationMethodv4_h
 
 #include "itkTimeVaryingVelocityFieldImageRegistrationMethodv4.h"
+#include "itkTimeVaryingVelocityFieldSemiLagrangianIntegrationImageFilter.h"
 #include "itkTimeVaryingVelocityFieldSemiLagrangianTransform.h"
 #include "itkForwardFFTImageFilter.h"
 #include "itkInverseFFTImageFilter.h"
@@ -206,6 +207,7 @@ protected:
   void InitializeKernels(TimeVaryingImagePointer kernel, TimeVaryingImagePointer inverseKernel, double alpha, double gamma);
   void Initialize();
   void IntegrateRate();
+  void IntegrateVelocity(double lowerTimeBound=0.0, double upperTimeBound=1.0, unsigned int numberOfIntegrationSteps=10, FieldPointer initialField=ITK_NULLPTR);
   FieldPointer GetMetricDerivative(FieldPointer field, bool useImageGradients);
   void UpdateControls(); 
   void StartOptimization();
