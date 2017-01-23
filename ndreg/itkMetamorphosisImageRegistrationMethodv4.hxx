@@ -200,7 +200,7 @@ Initialize()
 
   // Initialize displacement, /phi_{10}
   this->m_OutputTransform->SetVelocityField(velocity);
-  this->m_OutputTransform->SetNumberOfIntegrationSteps(m_NumberOfTimeSteps + 2);
+  this->m_OutputTransform->SetNumberOfIntegrationSteps(m_NumberOfTimeSteps+2);
   this->m_OutputTransform->SetLowerTimeBound(1.0);
   this->m_OutputTransform->SetUpperTimeBound(0.0);
   this->m_OutputTransform->IntegrateVelocityField();
@@ -536,7 +536,7 @@ IntegrateRate()
     adder->SetInput1(multiplier->GetOutput());      // r(j-1) \Delta t
     adder->SetInput2(m_Bias);                       // B(j-1)
 
-    IntegrateVelocity(j*m_TimeStep, (j-1)*m_TimeStep, 1);
+    IntegrateVelocity(j*m_TimeStep, (j-1)*m_TimeStep, 1); // \phi_{j,j-1}
 
     typedef WrapExtrapolateImageFunction<VirtualImageType, RealType>         ExtrapolatorType;
     typedef ResampleImageFilter<VirtualImageType,VirtualImageType,RealType>  ResamplerType;
@@ -684,7 +684,7 @@ UpdateControls()
     }
     else
     {
-      IntegrateVelocity(j*m_TimeStep, (j+1)*m_TimeStep, 1, this->m_OutputTransform->GetDisplacementField());
+      IntegrateVelocity(j*m_TimeStep, (j+1)*m_TimeStep, 1, this->m_OutputTransform->GetDisplacementField());  // \phi_{j,j+1}
     }
 
     velocityJoiner->PushFrontInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), true)); // p(t) \nabla I(t) =  p(1, \phi{t1})  \nabla I(1, \phi{t1})
@@ -752,17 +752,17 @@ UpdateControls()
     this->m_OutputTransform->SetVelocityField(adder2->GetOutput());  // v = v - \epsilon \nabla_V E
 
     // Compute forward mapping \phi{10} by integrating velocity field v(t)
-    IntegrateVelocity(1.0, 0.0, (m_NumberOfTimeSteps-1)+2 );
+    IntegrateVelocity(1.0, 0.0, m_NumberOfTimeSteps);  // \phi_{10}
     typedef DisplacementFieldTransform<RealType,ImageDimension> DisplacementFieldTransformType;
     typename DisplacementFieldTransformType::Pointer transform = DisplacementFieldTransformType::New();
-    transform->SetDisplacementField(this->m_OutputTransform->GetDisplacementField()); // \phi_{t1}
+    transform->SetDisplacementField(this->m_OutputTransform->GetDisplacementField()); // \phi_{10}
    
     // Compute forward image I(1) = I_0 o \phi_{10} + B(1)
     typedef WrapExtrapolateImageFunction<MovingImageType, RealType>         ExtrapolatorType;
     typedef ResampleImageFilter<MovingImageType,VirtualImageType,RealType>  MovingResamplerType;
     typename MovingResamplerType::Pointer resampler = MovingResamplerType::New();
     resampler->SetInput(this->GetMovingImage());   // I_0
-    resampler->SetTransform(transform);            // \phi_{t0}
+    resampler->SetTransform(transform);            // \phi_{10}
     resampler->UseReferenceImageOn();
     resampler->SetReferenceImage(this->GetFixedImage());
     resampler->SetExtrapolator(ExtrapolatorType::New());
@@ -770,7 +770,7 @@ UpdateControls()
 
     m_ForwardImage = resampler->GetOutput();       // I_0 o \phi_{10}
     
-    // Compute forward mask M(1) = M_0 o \phi{1_0} 
+    // Compute forward mask M(1) = M_0 o \phi{10} 
     if(m_ForwardMaskImage)
     {
       typedef NearestNeighborInterpolateImageFunction<MaskImageType, RealType>      MaskInterpolatorType;
@@ -869,7 +869,7 @@ GenerateData()
   if(m_UseBias) { IntegrateRate(); }
 
   // Integrate velocity to get final displacement, \phi_10
-  this->m_OutputTransform->SetNumberOfIntegrationSteps(m_NumberOfTimeSteps + 2);
+  this->m_OutputTransform->SetNumberOfIntegrationSteps(m_NumberOfTimeSteps+2);
   this->m_OutputTransform->SetLowerTimeBound(1.0);
   this->m_OutputTransform->SetUpperTimeBound(0.0);
   this->m_OutputTransform->IntegrateVelocityField();
