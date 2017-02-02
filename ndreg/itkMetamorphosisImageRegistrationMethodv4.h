@@ -14,6 +14,7 @@
 #include "itkVectorMagnitudeImageFilter.h"
 #include "itkGradientImageFilter.h"
 #include "itkDisplacementFieldJacobianDeterminantFilter.h"
+#include "itkComposeDisplacementFieldsImageFilter.h"
 #include "itkStatisticsImageFilter.h"
 #include "itkAddImageFilter.h"
 #include "itkMultiplyImageFilter.h"
@@ -23,7 +24,7 @@
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkImageMaskSpatialObject.h"
 #include "itkSpatialObjectToImageFilter.h"
-
+#include "itkImageDuplicator.h"
 namespace itk
 {
 template<class TInputImage, class TOutputImage>
