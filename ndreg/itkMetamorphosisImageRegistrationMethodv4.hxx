@@ -685,11 +685,11 @@ UpdateControls()
     }
     else
     {
-      IntegrateVelocity(j*m_TimeStep, (j+1)*m_TimeStep, 1);  // \phi_{j,j+1} //1
+      IntegrateVelocity(j*m_TimeStep, (j+1)*m_TimeStep, 2);  // \phi_{j,j+1} //1
       typedef ComposeDisplacementFieldsImageFilter<FieldType, FieldType> ComposerType;
       typename ComposerType::Pointer composer = ComposerType::New();
-      composer->SetWarpingField(previousDisplacement);
-      composer->SetDisplacementField(this->m_OutputTransform->GetDisplacementField());
+      composer->SetDisplacementField(previousDisplacement);
+      composer->SetWarpingField(this->m_OutputTransform->GetDisplacementField());
       composer->Update();
 
       this->m_OutputTransform->SetDisplacementField(composer->GetOutput());
