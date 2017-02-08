@@ -849,8 +849,10 @@ void
 MetamorphosisImageRegistrationMethodv4<TFixedImage, TMovingImage>::
 GenerateData()
 {
+  this->m_OutputTransform->UseInverseOff();
   Initialize();
   StartOptimization();
+  this->m_OutputTransform->UseInverseOn();
 
   // Integrate rate to get final bias, B(1)  
   if(m_UseBias) { IntegrateRate(); }

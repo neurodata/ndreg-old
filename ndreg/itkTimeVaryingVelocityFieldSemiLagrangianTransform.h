@@ -61,14 +61,18 @@ public:
   /** Trigger the computation of the displacement field by integrating
    * the time-varying velocity field. */
   virtual void IntegrateVelocityField() ITK_OVERRIDE;
+  itkBooleanMacro(UseInverse);
+  itkSetMacro(UseInverse, bool);
+  itkGetConstMacro(UseInverse, bool);
 
 protected:
-  TimeVaryingVelocityFieldSemiLagrangianTransform(){};
+  TimeVaryingVelocityFieldSemiLagrangianTransform();
   virtual ~TimeVaryingVelocityFieldSemiLagrangianTransform(){};
 
 private:
   TimeVaryingVelocityFieldSemiLagrangianTransform( const Self& ) ITK_DELETE_FUNCTION;
   void operator=( const Self& ) ITK_DELETE_FUNCTION;
+  bool m_UseInverse;
 };
 
 } // end namespace itk
