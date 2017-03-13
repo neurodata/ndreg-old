@@ -8,8 +8,10 @@ import os, math, sys, subprocess, tempfile, shutil, requests
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 from itertools import product
+from landmarks import *
+import ndio
 
-
+requests.packages.urllib3.disable_warnings() # Disable InsecureRequestWarning
 dimension = 3
 vectorComponentType = sitk.sitkFloat32
 vectorType = sitk.sitkVectorFloat32
@@ -132,8 +134,8 @@ def imgDownload(token, channel="", resolution=0, server="openconnecto.me", size=
     """
     # TODO: Fix size and start parameters
     # Create neurodata instance
-    nd = neurodata(suppress_warnings=True)
-    nd.hostname = server
+
+    nd = neurodata(suppress_warnings=True, hostname=server)
 
     # If channel isn't specified use first one
     channelList = nd.get_channels(token).keys()
@@ -841,23 +843,23 @@ def imgReorient(inImg, inOrient, outOrient):
             outDirection += orientToDirection[outOrient[i]]
         except:
             raise Exception("outOrient \'{0}\' is invalid.".format(outOrient))
-        
+    
     if len(set(inDirection)) != dimension: raise Exception("inOrient \'{0}\' is invalid.".format(inOrient))
     if len(set(outDirection)) != dimension: raise Exception("outOrient \'{0}\' is invalid.".format(outOrient))
 
     order = []
     flip = []
     for i in range(dimension):
-        j = outDirection.find(inDirection[i])
+        j = inDirection.find(outDirection[i])
         order += [j]
-        flip += [inOrient[i] != outOrient[j]]
+        flip += [inOrient[j] != outOrient[i]]
 
-    outImg = sitk.FlipImageFilter().Execute(inImg, flip, False)
-    outImg = sitk.PermuteAxesImageFilter().Execute(outImg, order)
+    outImg = sitk.PermuteAxesImageFilter().Execute(inImg, order)
+    outImg = sitk.FlipImageFilter().Execute(outImg, flip, False)
     outImg.SetDirection(identityDirection)
     outImg.SetOrigin(zeroOrigin)
-
     return outImg
+
 
 def imgChecker(inImg, refImg, useHM=True, pattern=[4]*dimension):
     """
@@ -1469,3 +1471,18 @@ def imgMetamorphosisLogParser(logPath):
         dataArray = np.concatenate((dataArray,dataRow),axis=0)
 
     return dataArray
+
+def lmkApplyField(inLmk, field, spacing=[1,1,1]):
+    # Create transform
+    transform = sitk.DisplacementFieldTransform(dimension)
+    transform.SetInterpolator(sitk.sitkLinear)
+    transform.SetDisplacementField(sitk.Cast(field, sitk.sitkVectorFloat64))
+
+    outLmkList = []
+    for lmk in inLmk.GetLandmarks():
+        name = lmk[0]
+        inPoint = lmk[1:]
+        outPoint = transform.TransformPoint(inPoint)
+        outLmkList += [[name]+list(outPoint)]
+        
+    return landmarks(outLmkList, inLmk.spacing)
