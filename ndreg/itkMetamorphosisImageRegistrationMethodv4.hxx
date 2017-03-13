@@ -657,6 +657,7 @@ UpdateControls()
   {
     double t = j * m_TimeStep;
 
+    //std::cout<<"Before integrate"<<std::endl; /***/
     // Compute reverse mapping, \phi_{t1} by integrating velocity field, v(t).
     if(j == m_NumberOfTimeSteps-1)
     {
@@ -670,7 +671,9 @@ UpdateControls()
       this->m_OutputTransform->IntegrateVelocityField();
     }
     
+    //std::cout<<"After integrate"<<std::endl; /***/
     velocityJoiner->PushBackInput(GetMetricDerivative(this->m_OutputTransform->GetDisplacementField(), true)); // p(t) \nabla I(t) =  p(1, \phi{t1})  \nabla I(1, \phi{t1})
+    //std::cout<<"After compute derivative"<<std::endl; /***/
 
     if(m_UseBias)
     {
@@ -687,13 +690,14 @@ UpdateControls()
   velocityJoiner->Update();
 
   // Compute velocity energy gradient, \nabla_V E = v + K_V [p \nabla I]
+  //std::cout<<"Before Apply Kernel"<<std::endl;  /***/
   typedef AddImageFilter<TimeVaryingFieldType> TimeVaryingFieldAdderType;
   typename TimeVaryingFieldAdderType::Pointer adder0 = TimeVaryingFieldAdderType::New();
   adder0->SetInput1(this->m_OutputTransform->GetVelocityField());                 // v
   adder0->SetInput2(ApplyKernel(m_VelocityKernel,velocityJoiner->GetOutput()));   // K_V[p \nabla I]
   adder0->Update();
   TimeVaryingFieldPointer velocityEnergyGradient = adder0->GetOutput();           // \nabla_V E = v + K_V[p \nabla I]
-
+  //std::cout<<"After Apply Kernel"<<std::endl; /***/
 
   // Compute rate energy gradient \nabla_r E = r - \mu^2 K_R[p]
   typedef MultiplyImageFilter<TimeVaryingImageType,TimeVaryingImageType>  TimeVaryingImageMultiplierType;
@@ -715,7 +719,9 @@ UpdateControls()
     rateEnergyGradient = adder1->GetOutput();      // \nabla_R E = r - \mu^2 K_R[p]
   }
 
+  //std::cout<<"Before GetEnergy"<<std::endl;  /***/
   double                  energyOld = GetEnergy();
+  //std::cout<<"After GetEnergy"<<std::endl;  /***/
   TimeVaryingFieldPointer velocityOld = this->m_OutputTransform->GetVelocityField();
   TimeVaryingImagePointer rateOld = m_Rate;
 
