@@ -127,15 +127,18 @@ def imgRead(path):
 
     return inImg
 
-def imgDownload(token, channel="", resolution=0, server="openconnecto.me", size=[], start=[]):
+def imgDownload(token, channel="", resolution=0, server="openconnecto.me", userToken="", size=[], start=[]):
     """
     Download image with given token from given server at given resolution.
     If channel isn't specified the first channel is downloaded.
     """
     # TODO: Fix size and start parameters
-    # Create neurodata instance
 
-    nd = neurodata(suppress_warnings=True, hostname=server)
+    # Create neurodata instance
+    if userToken != "":
+        nd = neurodata(suppress_warnings=True, hostname=server, user_token=userToken)
+    else:
+        nd = neurodata(suppress_warnings=True, hostname=server)
 
     # If channel isn't specified use first one
     channelList = nd.get_channels(token).keys()
@@ -340,14 +343,17 @@ def imgPostprocess(inImg, refToken, outToken, outChannel="", useNearest=False, d
         imgUpload(inImg, outToken, channel=outChannel, resolution=outResolution)
 
 
-def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server="openconnecto.me",  propagate=False):
+def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server="openconnecto.me", userToken="",  propagate=False):
     """
     Upload image with given token from given server at given resolution.
     If channel isn't specified image is uploaded to default channel
     """
     # Create neurodata instance
-    nd = neurodata()
-    nd.hostname = server        
+
+    if userToken != "":
+        nd = neurodata(suppress_warnings=True, hostname=server, user_token=userToken)
+    else:
+        nd = neurodata(suppress_warnings=True, hostname=server)
 
     # If channel isn't specified use first one
     channelList = nd.get_channels(token).keys()
