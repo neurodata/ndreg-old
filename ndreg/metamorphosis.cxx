@@ -557,15 +557,26 @@ int Metamorphosis(typename TImage::Pointer fixedImage, typename ParserType::Poin
 
   if(gridPath != "")
   {
+    std::vector<unsigned int> gridStep;
+    parser->GetCommandLineArgument("--gridstep",gridStep);
+
+    if(gridStep.size() == 1)
+    {
+      gridStep.resize(ImageDimension, gridStep[0]);
+    }
+    else if(gridStep.size() == 0 || gridStep.size() != ImageDimension)
+    {
+      gridStep.resize(ImageDimension, 5); // Default space in voxels between grid lines
+    }
+
     // Generate grid
     typedef itk::BSplineKernelFunction<0>  KernelType;
     typename KernelType::Pointer kernelFunction = KernelType::New();
-    unsigned int gridStep = 5; // Default space in voxels between grid lines
-    parser->GetCommandLineArgument("--gridstep",gridStep);
-
     typedef itk::GridImageSource<ImageType> GridSourceType;
     typename GridSourceType::Pointer gridSource = GridSourceType::New();
-    typename GridSourceType::ArrayType gridSpacing = fixedImage->GetSpacing()*gridStep;
+    typename GridSourceType::ArrayType gridSpacing;
+    for(unsigned int i = 0; i < ImageDimension; i++){ gridSpacing[i] = fixedImage->GetSpacing()[i]*gridStep[i]; }
+    //typename GridSourceType::ArrayType gridSpacing = fixedImage->GetSpacing()*gridStep;
     typename GridSourceType::ArrayType gridOffset; gridOffset.Fill(0.0);
     typename GridSourceType::ArrayType sigma = fixedImage->GetSpacing();
     typename GridSourceType::ArrayType which; which.Fill(true);
