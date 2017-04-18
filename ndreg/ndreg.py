@@ -17,7 +17,7 @@ vectorComponentType = sitk.sitkFloat32
 vectorType = sitk.sitkVectorFloat32
 affine = sitk.AffineTransform(dimension)
 identityAffine = list(affine.GetParameters())
-identityDirection = list(affine.GetMatrix())
+identityDirection = identityAffine[0:9]
 zeroOrigin = [0]*dimension
 zeroIndex = [0]*dimension
 
@@ -457,7 +457,7 @@ def vtkReformat(inPath, outPath):
         outFile.write(line)
 
 
-def imgResample(img, spacing, size=[], useNearest=False):
+def imgResample(img, spacing, size=[], useNearest=False, origin=[], outsideValue=0):
     """
     Resamples image to given spacing and size.
     """
@@ -471,11 +471,31 @@ def imgResample(img, spacing, size=[], useNearest=False):
     else:
         if len(size) != img.GetDimension(): raise Exception("len(size) != " + str(img.GetDimension()))
     
+    if origin == []:
+        origin = [0]*img.GetDimension()
+    else:
+        if len(origin) != img.GetDimension(): raise Exception("len(origin) != " + str(img.GetDimension()))
+    
     # Resample input image
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
     identityTransform = sitk.Transform()
+    identityDirection = list(sitk.AffineTransform(img.GetDimension()).GetMatrix())
+
+    return sitk.Resample(img, size, identityTransform, interpolator, origin, spacing, identityDirection, outsideValue)
+
+def imgZoom(img, point, size, spacing=[], useNearest=False, outsideValue=0):
+    """
+    Returns image of given size centered at given point at resolution given by spacing
+    """
+    if len(point) != img.GetDimension(): raise Exception("len(point) != " + str(img.GetDimension()))
+    if len(size) != img.GetDimension(): raise Exception("len(size) != " + str(img.GetDimension()))
+    if spacing == []:
+        spacing = img.GetSpacing()
+    else:
+        if len(spacing) != img.GetDimension(): raise Exception("len(spacing) != " + str(img.GetDimension()))
     
-    return sitk.Resample(img, size, identityTransform, interpolator, zeroOrigin, spacing)
+    origin = np.array(point) - np.array(size)*np.array(spacing)*0.5
+    return imgResample(img, spacing, size, useNearest, origin, outsideValue)
 
 def imgPad(img, padding=0, useNearest=False):
      """
@@ -1195,7 +1215,7 @@ def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1
 
     return (field, invField)
 
-def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, flip=[0,0,0], numSlices=3):
+def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, flip=[0,0,0], numSlices=3, useNearest=False):
     """
     Displays an image.  Only 2D images are supported for now
     """
@@ -1210,9 +1230,11 @@ def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, flip=
     if cmap is None: cmap=plt.cm.gray
     if alpha is None: alpha = 1.0
 
+    interpolation = ['bilinear', 'none'][useNearest]
+
     if img.GetDimension() == 2:
         plt.axis('off')
-        ax = plt.imshow(sitk.GetArrayFromImage(img), cmap=cmap,  vmin=vmin, vmax=vmax, alpha=alpha)
+        ax = plt.imshow(sitk.GetArrayFromImage(img), cmap=cmap,  vmin=vmin, vmax=vmax, alpha=alpha, interpolation=interpolation)
 
     elif img.GetDimension() == 3:
         size = img.GetSize()
@@ -1230,7 +1252,7 @@ def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, flip=
                 if flip[i]: sliceArray = np.transpose(sliceArray)
 
                 plt.subplot(numSlices, img.GetDimension(),i+img.GetDimension()*j+1)
-                ax = plt.imshow(sliceArray, cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha)
+                ax = plt.imshow(sliceArray, cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha, interpolation=interpolation)
                 plt.axis('off')
     else: 
         raise Exception("Image dimension must be 2 or 3.")
@@ -1302,7 +1324,7 @@ def imgGrid(size, spacing, step=[10,10,10],field=None):
     gridSource.SetSize(np.array(size))
     gridSource.SetGridSpacing(np.array(step)*np.array(spacing))
     gridSource.SetScale(255)
-    gridSource.SetSigma(2*np.array(spacing))
+    gridSource.SetSigma(1*np.array(spacing))
     grid = gridSource.Execute()
 
     if not(field is None):
