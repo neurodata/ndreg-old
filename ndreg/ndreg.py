@@ -21,6 +21,7 @@ identityDirection = identityAffine[0:9]
 zeroOrigin = [0]*dimension
 zeroIndex = [0]*dimension
 
+ndServerDefault = "dev.neurodata.io"
 ndToSitkDataTypes = {'uint8': sitk.sitkUInt8,
                      'uint16': sitk.sitkUInt16,
                      'uint32': sitk.sitkUInt32,
@@ -127,7 +128,7 @@ def imgRead(path):
 
     return inImg
 
-def imgDownload(token, channel="", resolution=0, server="openconnecto.me", userToken="", size=[], start=[]):
+def imgDownload(token, channel="", resolution=0, server=ndServerDefault, userToken="", size=[], start=[]):
     """
     Download image with given token from given server at given resolution.
     If channel isn't specified the first channel is downloaded.
@@ -343,7 +344,7 @@ def imgPostprocess(inImg, refToken, outToken, outChannel="", useNearest=False, d
         imgUpload(inImg, outToken, channel=outChannel, resolution=outResolution)
 
 
-def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server="openconnecto.me", userToken="",  propagate=False):
+def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server=ndServerDefault, userToken="",  propagate=False):
     """
     Upload image with given token from given server at given resolution.
     If channel isn't specified image is uploaded to default channel
@@ -1514,3 +1515,54 @@ def lmkApplyField(inLmk, field, spacing=[1,1,1]):
         outLmkList += [[name]+list(outPoint)]
         
     return landmarks(outLmkList, inLmk.spacing)
+
+def vizUrl(tokenList, channelList=[], serverList=[], userTokenList=[], use4Panel=True):
+    if isinstance(tokenList, basestring): tokenList = [tokenList]
+    numTokens = len(tokenList)
+
+    if isinstance(channelList, basestring): channelList = [channelList]
+    if len(channelList) == 0: channelList = [""]*numTokens
+    if len(channelList) != numTokens: raise Exception("len(channelList) != len(tokenList)")
+
+    if isinstance(serverList, basestring): serverList = [serverList]*numTokens
+    if len(serverList) == 0: serverList = [ndServerDefault]*numTokens
+    if len(serverList) != numTokens: raise Exception("len(serverList) != len(tokenList)")
+
+    if isinstance(userTokenList, basestring): userTokenList = [userTokenList]*numTokens
+    if len(userTokenList) == 0: userTokenList = [""]*numTokens
+    if len(userTokenList) != numTokens: raise Exception("len(userTokenList) != len(tokenList)")
+
+    layerDict = {}
+    for i in range(0,numTokens):
+        if userTokenList[i] != "":
+            nd = neurodata(suppress_warnings=True, hostname=serverList[i], user_token=userTokenList[i])
+        else:
+            nd = neurodata(suppress_warnings=True, hostname=serverList[i])        
+
+        # Check if project token has given channel
+        ndstoreChannelList = nd.get_channels(tokenList[i]).keys()
+        if len(ndstoreChannelList) == 0: 
+            raise Exception('Project token "{0}" does not have any channels.'.format(tokenList[i], channelList[i]))
+        elif channelList[i] == "": 
+            # Use first channel if no channel was provided for this token.
+            channelList[i] = ndstoreChannelList[0] 
+        elif not(channelList[i] in ndstoreChannelList): 
+            raise Exception('Project token "{0}" does not have a channel named "{1}".'.format(tokenList[i], channelList[i]))
+
+        # Get channel type, either "image" or "annotation" from ndstore
+        channelType = nd.get_proj_info(tokenList[i])['channels'][channelList[i]]['channel_type'].encode('ascii','ignore')
+
+        # ndviz uses name "segmentation" insted of "annotation" to dentote annotation channels
+        if channelType == "annotation": channelType = "segmentation"
+
+        channelDict = {'type': channelType, 'source': 'ndstore://https://{server}/{token}/{channel}?neariso=false'.format(token=tokenList[i], channel=channelList[i], server=serverList[i])}
+        layerDict["{0}?neariso=false".format(channelList[i])] = channelDict
+
+    ndvizDict = {}
+    ndvizDict['layers'] = layerDict
+    if use4Panel: ndvizDict['layout'] = '4panel'
+    ndvizString = str(ndvizDict).replace(" ","").replace(",","_")
+    ndvizBaseUrl = "https://mri.neurodata.io/ndviz/#!"
+    ndvizUrl = ndvizBaseUrl+ndvizString
+
+    return ndvizUrl
