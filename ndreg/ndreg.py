@@ -1015,7 +1015,7 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
     
     return compositeAffine    
 
-def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, useNearest=False, useBias=False, useMI=False, verbose=False, debug=False, inMask=None, refMask=None, outDirPath=""):
+def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, epsilon=None, useNearest=False, useBias=False, useMI=False, verbose=False, debug=False, inMask=None, refMask=None, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
     """
@@ -1041,7 +1041,16 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
     if(not useBias): command += " --mu 0"
     if(useMI):
         #command += " --cost 1 --sigma 1e-5 --epsilon 1e-3" 
-        command += " --cost 1 --sigma 1e-4 --epsilon 1e-3" 
+        command += " --cost 1 --sigma 1e-4" 
+        if not(epsilon is None):
+            command += " --epsilon {0}".format(epsilon)
+        else:
+            command += " --epsilon 1e-3"
+    else:
+        if not(epsilon is None): command += " --epsilon {0}".format(epsilon)
+        
+        
+
         
     if(inMask):
         inMaskPath = outDirPath + "inMask.img"
@@ -1067,7 +1076,7 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
     return (field, invField)
 
 
-def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, useNearest=False, useBias=False, useMI=False, inMask=None, refMask=None, verbose=True, debug=False, outDirPath=""):
+def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, epsilonList=None, useNearest=False, useBias=False, useMI=False, inMask=None, refMask=None, verbose=True, debug=False, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
     """
@@ -1083,6 +1092,11 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
     if isNumber(scaleList): scaleList = [float(scaleList)]
     
     numSteps = max(len(alphaList), len(betaList), len(scaleList))
+
+    if isNumber(epsilonList):
+        epsilonList = [float(epsilonList)]*numSteps
+    elif epsilonList is None:
+        epsilonList = [None]*numSteps
 
     if len(alphaList) != numSteps:
         if len(alphaList) != 1:
@@ -1108,6 +1122,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
         alpha = alphaList[step]
         beta = betaList[step]
         scale = scaleList[step]
+        epsilon = epsilonList[step]
         stepDirPath = outDirPath + "step" + str(step) + "/"
         if(verbose): print("\nStep {0}: alpha={1}, beta={2}, scale={3}".format(step,alpha, beta, scale))
 
@@ -1116,6 +1131,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
                                              beta, 
                                              scale, 
                                              iterations, 
+                                             epsilon,
                                              useNearest, 
                                              useBias, 
                                              useMI, 
@@ -1224,7 +1240,7 @@ def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, flip=
 
     if (vmin is None) or (vmax is None):
         stats = sitk.StatisticsImageFilter()
-        stats.Execute(img)
+        stats.Execute(sitk.Cast(img, sitk.sitkFloat32))
         if vmin is None: vmin = stats.GetMinimum()
         if vmax is None: vmax = stats.GetMaximum()
 
@@ -1554,6 +1570,7 @@ def vizUrl(tokenList, channelList=[], serverList=[], userTokenList=[], use4Panel
 
         # ndviz uses name "segmentation" insted of "annotation" to dentote annotation channels
         if channelType == "annotation": channelType = "segmentation"
+        if channelType == "timeseries": channelType = "image"
 
         channelDict = {'type': channelType, 'source': 'ndstore://https://{server}/{token}/{channel}?neariso=false'.format(token=tokenList[i], channel=channelList[i], server=serverList[i])}
         layerDict["{0}?neariso=false".format(channelList[i])] = channelDict
