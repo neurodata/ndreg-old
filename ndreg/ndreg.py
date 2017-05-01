@@ -906,7 +906,7 @@ def imgChecker(inImg, refImg, useHM=True, pattern=[4]*dimension):
 
     return sitk.CheckerBoardImageFilter().Execute(inImg, refImg,pattern)
 
-def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False, numBins=32, iterations=1000, inMask=None, refMask=None, verbose=False):
+def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False, numBins=32, iterations=1000, inMask=None, refMask=None, verbose=False, epsilon=0.1):
     """
     Perform Affine Registration between input image and reference image
     """
@@ -944,10 +944,7 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     else:
         registration.SetMetricAsMeanSquares()
 
-    learningRate=0.1
-
-
-    registration.SetOptimizerAsRegularStepGradientDescent(learningRate=learningRate, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
+    registration.SetOptimizerAsRegularStepGradientDescent(learningRate=epsilon, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
     if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
 
     ### if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])
@@ -1062,7 +1059,10 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
         imgWrite(refMask, refMaskPath)
         command += " --refmask " + refMaskPath
     
-    if debug: print(command)
+    if debug:
+        command = "/usr/bin/time -v " + command
+        print(command)
+        
     #os.system(command)
     (returnValue, logText) = run(command, verbose=verbose)
     
@@ -1240,7 +1240,7 @@ def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, flip=
 
     if (vmin is None) or (vmax is None):
         stats = sitk.StatisticsImageFilter()
-        stats.Execute(sitk.Cast(img, sitk.sitkFloat32))
+        stats.Execute(img)
         if vmin is None: vmin = stats.GetMinimum()
         if vmax is None: vmax = stats.GetMaximum()
 
