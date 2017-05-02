@@ -787,14 +787,21 @@ def affineInverse(affine):
     b1 = -A1*b0
     return A1.flatten().tolist()[0] + b1.flatten().tolist()[0]
 
+
 def affineApplyAffine(inAffine, affine):
     """ A_{outAffine} = A_{inAffine} \circ A_{affine} """
-    if (not(isIterable(inAffine))) or (len(inAffine) != 12): raise Exception("inAffine must be a list of length 12.")
-    if (not(isIterable(affine))) or (len(affine) != 12): raise Exception("affine must be a list of length 12.")
-    A0 = np.array(affine[0:9]).reshape(3,3)
-    b0 = np.array(affine[9:12]).reshape(3,1)
-    A1 = np.array(inAffine[0:9]).reshape(3,3)
-    b1 = np.array(inAffine[9:12]).reshape(3,1)
+    if (not(isIterable(inAffine)) or not(isIterable(affine))): raise Exception("inAffine and affine must be lists.")
+    numParameters = len(inAffine)
+    n = 0.5*(-1 + math.sqrt(1+ 4*numParameters)) # dimension
+    epsilon = 1e-6
+    if (n - int(n)) > epsilon: raise Exception("Must have len(inAffine) = n*n + n where n is some interger.")
+    if numParameters != len(affine): raise Exception("inAffine and affine should be lists of same length.")
+    
+    n = int(n)
+    A0 = np.array(affine[:n*n]).reshape(n,n)
+    b0 = np.array(affine[n*n:]).reshape(n,1)
+    A1 = np.array(inAffine[:n*n]).reshape(n,n)
+    b1 = np.array(inAffine[n*n:]).reshape(n,1)
 
     # x0 = A0*x1 + b0
     # x1 = A1*x2 + b1
@@ -804,6 +811,7 @@ def affineApplyAffine(inAffine, affine):
 
     outAffine = A.flatten().tolist() + b.flatten().tolist()
     return outAffine
+
 
 def fieldApplyField(inField, field, size=[], spacing=[]):
     """ outField = inField \circ field """
@@ -951,8 +959,6 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
                     
     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,0.25),
                          sitk.SmoothingRecursiveGaussian(inImg,0.25) )
-
-
 
 
     idAffine = list(sitk.AffineTransform(inDimension).GetParameters())    
