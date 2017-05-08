@@ -47,18 +47,27 @@ ndregAffine = 3 #2
 
 
 
-def isIterable(obj):
+def isIterable(variable):
     """
-    Returns True if obj is a list, tuple or any other iterable object
+    Returns True if variable is a list, tuple or any other iterable object
     """
-    return hasattr([],'__iter__')
+    return hasattr(variable,'__iter__')
 
 def isNumber(variable):
+    """
+    Returns True if varible is is a number
+    """
     try:
         float(variable)
     except TypeError:
         return False
     return True
+
+def isInteger(n, epsilon=1e-6):
+    """
+    Returns True if n is integer within error epsilon
+    """
+    return (n - int(n)) < epsilon
 
 def run(command, checkReturnValue=True, verbose=False):
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
@@ -777,15 +786,68 @@ def imgApplyAffine(inImg, affine, useNearest=False, size=[], spacing=[]):
     return outImg
 
 
+
 def affineInverse(affine):
     # x0 = A0*x1 + b0
     # x1 = (A0.I)*x0 + (-A0.I*b0) = A1*x0 + b1
-    A0 = np.mat(affine[0:9]).reshape(3,3)
-    b0 = np.mat(affine[9:12]).reshape(3,1)
+
+    if not isIterable(affine): raise Exception("affine must be a list.")
+    numParameters = len(affine)
+    n = 0.5*(-1 + math.sqrt(1+ 4*numParameters)) # dimension
+    if not isInteger(n): raise Exception("Must have len(affine) = n*n + n where n is some interger.")
+    n = int(n)
+
+    A0 = np.mat(affine[:n*n]).reshape(n,n)
+    b0 = np.mat(affine[n*n:]).reshape(n,1)
 
     A1 = A0.I
     b1 = -A1*b0
     return A1.flatten().tolist()[0] + b1.flatten().tolist()[0]
+    
+
+
+def affineRotate(theta, center=[], useDegrees=True):
+    cos = np.cos
+    sin = np.sin
+
+    theta = np.array(theta)
+    if useDegrees: theta = theta * (np.pi/180)
+    
+    if len(theta) == 1:
+        n = 2 # dimension    
+    elif len(theta) == 3:
+        n = len(theta)
+    else:
+        raise Exception("theta has invalid dimension")
+
+    if center == []:
+        center = [0]*n
+    else:
+        if not isIterable(center): raise Exception("center must be a list.")
+        if len(center) != n: raise Exception("center has invalid dimension.")
+
+    center = np.mat(center).transpose()
+
+    if n == 2:
+        theta = theta[0]
+        A = np.mat([[cos(theta), -sin(theta)],
+                    [sin(theta),  cos(theta)]])
+    elif n == 3:
+        A_x = np.mat([[1, 0, 0],
+                     [0, cos(theta[0]), -sin(theta[0])],
+                     [0, sin(theta[0]),  cos(theta[0])]])
+        A_y = np.mat([[cos(theta[1]), 0, sin(theta[1])],
+                      [0, 1, 0],
+                      [-sin(theta[1]), 0, cos(theta[1])]])
+        A_z = np.mat([[cos(theta[2]), -sin(theta[2]), 0],
+                      [sin(theta[2]),  cos(theta[2]), 0],
+                      [0, 0, 1]])
+        A = A_z*A_y*A_x
+
+    b = -A*center + center
+    return A.flatten().tolist()[0] + b.flatten().tolist()[0]
+
+
 
 
 def affineApplyAffine(inAffine, affine):
@@ -793,8 +855,7 @@ def affineApplyAffine(inAffine, affine):
     if (not(isIterable(inAffine)) or not(isIterable(affine))): raise Exception("inAffine and affine must be lists.")
     numParameters = len(inAffine)
     n = 0.5*(-1 + math.sqrt(1+ 4*numParameters)) # dimension
-    epsilon = 1e-6
-    if (n - int(n)) > epsilon: raise Exception("Must have len(inAffine) = n*n + n where n is some interger.")
+    if not isInteger(n): raise Exception("Must have len(inAffine) = n*n + n where n is some interger.")
     if numParameters != len(affine): raise Exception("inAffine and affine should be lists of same length.")
     
     n = int(n)
@@ -832,22 +893,24 @@ def fieldApplyField(inField, field, size=[], spacing=[]):
        if len(size) != inDimension: raise Exception("size must have length {0}.".format(inDimension))
 
     # Create transform for input field
-    inTransform = sitk.DisplacementFieldTransform(dimension)
+    inTransform = sitk.DisplacementFieldTransform(inDimension)
     inTransform.SetDisplacementField(inField)
     inTransform.SetInterpolator(sitk.sitkLinear)
 
     # Create transform for field
-    transform = sitk.DisplacementFieldTransform(dimension)
+    transform = sitk.DisplacementFieldTransform(inDimension)
     transform.SetDisplacementField(field)
     transform.SetInterpolator(sitk.sitkLinear)
     
     # Combine transforms
-    outTransform = sitk.Transform()
-    outTransform.AddTransform(transform)
+    outTransform = sitk.Transform(transform)
+    #outTransform.AddTransform(transform)
     outTransform.AddTransform(inTransform)
 
     # Get output displacement field
-    return sitk.TransformToDisplacementFieldFilter().Execute(outTransform, vectorType, size, zeroOrigin, spacing, identityDirection)
+    direction = np.eye(inDimension).flatten().tolist()
+    origin = [0]*inDimension
+    return sitk.TransformToDisplacementFieldFilter().Execute(outTransform, vectorType, size, origin, spacing, direction)
 
 def imgReorient(inImg, inOrient, outOrient):
     """
@@ -956,9 +1019,10 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
 
     ### if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])
-                    
-    registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,0.25),
-                         sitk.SmoothingRecursiveGaussian(inImg,0.25) )
+    
+    sigma = np.mean(np.array(refImg.GetSize())*np.array(refImg.GetSpacing())*0.02)
+    registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,sigma),
+                         sitk.SmoothingRecursiveGaussian(inImg,sigma) )
 
 
     idAffine = list(sitk.AffineTransform(inDimension).GetParameters())    
@@ -971,14 +1035,17 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
         affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
     return affine
 
-def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, iterations=1000, inAffine=identityAffine,verbose=False, inMask=None, refMask=None, outDirPath=""):
+def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, iterations=1000, inAffine=None,verbose=False, inMask=None, refMask=None, outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     origInImg = inImg
     origInMask = inMask
     origRefMask = refMask
 
-    #initilize using input affine
+    # initilize using input affine
+    inDimension = inImg.GetDimension()
+    if inAffine is None: inAffine = list(sitk.AffineTransform(inDimension).GetParameters())
+
     compositeAffine = inAffine
     inImg = imgApplyAffine(origInImg, compositeAffine)
     if(inMask): inMask = imgApplyAffine(origInMask, compositeAffine, useNearest=True)
