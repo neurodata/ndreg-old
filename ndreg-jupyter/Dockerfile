@@ -42,9 +42,10 @@ RUN pip install ipython
 RUN pip install ipython[all]
 RUN pip install jupyter
 
-# Build ndreg
+# Build ndreg. Cache based on last commit.
 WORKDIR /work
-RUN git clone https://github.com/neurodata/ndreg.git /work/ndreg --branch eric-dev --single-branch
+ADD https://api.github.com/repos/neurodata/ndreg/git/refs/heads/master version.json
+RUN git clone https://github.com/neurodata/ndreg.git /work/ndreg --branch master --single-branch
 WORKDIR /work/ndreg
 RUN cmake . && make && make install
 
