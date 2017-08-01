@@ -243,7 +243,7 @@ def imgUpload_boss(remote, img, channel_resource, coord_frame, resolution=0, sta
     sp_z = st_z + np.shape(data)[2]
 
     try:
-        rmt.create_cutout(channel_resource, resolution, 
+        remote.create_cutout(channel_resource, resolution, 
             [st_x, sp_x], [st_y, sp_y], [st_z, sp_z], data)
         print('Upload success')
     except Exception as e:
