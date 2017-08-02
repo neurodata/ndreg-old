@@ -11,6 +11,9 @@ from itertools import product
 from landmarks import *
 import ndio
 
+from intern.remote.boss import BossRemote
+from intern.resource.boss.resource import *
+
 requests.packages.urllib3.disable_warnings() # Disable InsecureRequestWarning
 dimension = 3
 vectorComponentType = sitk.sitkFloat32
@@ -136,6 +139,117 @@ def imgRead(path):
     inImg.SetOrigin([0]*inDimension)
 
     return inImg
+
+#Boss Stuff:
+def setup_experiment_boss(collection, experiment):
+    exp_setup = ExperimentResource(experiment, collection)
+    exp_setup._time_step_unit = 'seconds'
+    try:
+        exp_actual = rmt.get_project(exp_setup)
+    except HTTPError:
+        print("Error: Failed to find experiment.")
+    coord_setup = CoordinateFrameResource(exp_actual.coord_frame)
+    try:
+        coord_actual= rmt.get_project(coord_setup)
+    except HTTPError:
+        print("Error: Failed to find coordinate frame.")
+   
+    return (exp_setup, coord_actual)
+
+def setup_channel_boss(collection, experiment, channel, channel_type='image', datatype='uint16'):
+    (exp_setup, coord_actual) = setup_experiment_boss(collection, experiment)
+ 
+    chan_setup = ChannelResource(channel, collection, experiment, channel_type, datatype=datatype)
+    try:
+        chan_actual = rmt.get_project(chan_setup)
+    except HTTPError:
+        print("Error: Failed to find channel.")
+    
+    return (exp_setup, coord_actual, chan_actual)
+
+# Note: The following functions assume an anisotropic dataset. This is generally a bad assumption. These
+# functions are stopgaps until proper coordinate frame at resulution support exists in intern.
+def get_offset_boss(coord_frame, res=0, isotropic=False):
+    return [
+        int(coord_frame.x_start / (2.**res)), 
+        int(coord_frame.y_start / (2.**res)),
+        int(coord_frame.z_start / (2.**res)) if isotropic else coord_frame.z_start]
+
+def get_image_size_boss(coord_frame, res=0, isotropic=False):
+    return [
+        int(coord_frame.x_stop / (2.**res)),
+        int(coord_frame.y_stop / (2.**res)),
+        int(coord_frame.z_stop / (2.**res)) if isotropic else coord_frame.z_stop]
+
+def imgDownload_boss(remote, channel_resource, coordinate_frame_resource, resolution=0, size=[], start=[], isotropic=False):
+    """
+    Download image with given token from given server at given resolution.
+    If channel isn't specified the first channel is downloaded.
+    """
+    # TODO: Fix size and start parameters
+
+    voxel_unit = coordinate_frame_resource.voxel_unit
+    voxel_units = ('nanometers', 'micrometers', 'millimeters', 'centimeters')
+    factor_divide = (1e-6, 1e-3, 1, 10)
+    fact_div = factor_divide[voxel_units.index(voxel_unit)]
+    
+    spacingBoss = [coordinate_frame_resource.x_voxel_size, coordinate_frame_resource.y_voxel_size, coordinate_frame_resource.z_voxel_size]
+    spacing = [x * fact_div for x in spacingBoss] # Convert spacing to mm
+
+    if size == []: size = get_image_size_boss(coordinate_frame_resource, resolution, isotropic)
+    if start == []: start = get_offset_boss(coordinate_frame_resource, resolution, isotropic)
+    
+    #size[2] = 200
+    #dataType = metadata['channels'][channel]['datatype']
+    dataType = channel_resource.datatype
+    
+    # Download all image data from specified channel
+    array = remote.get_cutout(channel_resource, resolution, [start[0], size[0]], [start[1], size[1]], [start[2], size[2]])
+    
+    # Cast downloaded image to server's data type
+    img = sitk.Cast(sitk.GetImageFromArray(array),ndToSitkDataTypes[dataType]) # convert numpy array to sitk image
+
+    # Reverse axes order
+    #img = sitk.PermuteAxesImageFilter().Execute(img,range(dimension-1,-1,-1))
+    img.SetDirection(identityDirection)
+    img.SetSpacing(spacing)
+
+    # Convert to 2D if only one slice
+    img = imgCollaspeDimension(img)
+
+    return img
+
+
+def get_offset_boss(coord_frame, res=0, isotropic=False):
+    return [
+        int(coord_frame.x_start / (2.**res)), 
+        int(coord_frame.y_start / (2.**res)),
+        int(coord_frame.z_start / (2.**res)) if isotropic else coord_frame.z_start]
+
+def imgUpload_boss(remote, img, channel_resource, coord_frame, resolution=0, start=[0,0,0], propagate=False, isotropic=False):
+    if(img.GetDimension() == 2): img = sitk.JoinSeriesImageFilter().Execute(img)
+    
+    data = sitk.GetArrayFromImage(img)
+
+    offset = get_offset_boss(coord_frame, resolution, isotropic)
+
+    start = [x + y for x, y in zip(start, offset)]
+
+    st_x = start[0]
+    st_y = start[1]
+    st_z = start[2]
+    sp_x = st_x + np.shape(data)[0]
+    sp_y = st_y + np.shape(data)[1]
+    sp_z = st_z + np.shape(data)[2]
+
+    try:
+        remote.create_cutout(channel_resource, resolution, 
+            [st_x, sp_x], [st_y, sp_y], [st_z, sp_z], data)
+        print('Upload success')
+    except Exception as e:
+        # perhaps reconnect, etc.
+        print('Exception occurred: {}'.format(e))
+        raise(e)
 
 def imgDownload(token, channel="", resolution=0, server=ndServerDefault, userToken="", size=[], start=[]):
     """
