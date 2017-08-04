@@ -13,6 +13,7 @@ import ndio
 
 from intern.remote.boss import BossRemote
 from intern.resource.boss.resource import *
+from requests import HTTPError
 
 requests.packages.urllib3.disable_warnings() # Disable InsecureRequestWarning
 dimension = 3
@@ -141,31 +142,28 @@ def imgRead(path):
     return inImg
 
 #Boss Stuff:
-def setup_experiment_boss(collection, experiment):
+def setup_experiment_boss(remote, collection, experiment):
     exp_setup = ExperimentResource(experiment, collection)
     exp_setup._time_step_unit = 'seconds'
     try:
-        exp_actual = rmt.get_project(exp_setup)
-    except HTTPError:
-        print("Error: Failed to find experiment.")
-    coord_setup = CoordinateFrameResource(exp_actual.coord_frame)
-    try:
-        coord_actual= rmt.get_project(coord_setup)
-    except HTTPError:
-        print("Error: Failed to find coordinate frame.")
+        exp_actual = remote.get_project(exp_setup)
+        coord_setup = CoordinateFrameResource(exp_actual.coord_frame)
+        coord_actual= remote.get_project(coord_setup)
+        return (exp_setup, coord_actual)
+    except HTTPError as e:
+        print(e.message)
    
-    return (exp_setup, coord_actual)
 
-def setup_channel_boss(collection, experiment, channel, channel_type='image', datatype='uint16'):
-    (exp_setup, coord_actual) = setup_experiment_boss(collection, experiment)
+def setup_channel_boss(remote, collection, experiment, channel, channel_type='image', datatype='uint16'):
+    (exp_setup, coord_actual) = setup_experiment_boss(remote, collection, experiment)
  
     chan_setup = ChannelResource(channel, collection, experiment, channel_type, datatype=datatype)
     try:
-        chan_actual = rmt.get_project(chan_setup)
-    except HTTPError:
-        print("Error: Failed to find channel.")
+        chan_actual = remote.get_project(chan_setup)
+        return (exp_setup, coord_actual, chan_actual)
+    except HTTPError as e:
+        print(e.message)
     
-    return (exp_setup, coord_actual, chan_actual)
 
 # Note: The following functions assume an anisotropic dataset. This is generally a bad assumption. These
 # functions are stopgaps until proper coordinate frame at resulution support exists in intern.
