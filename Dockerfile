@@ -44,8 +44,8 @@ RUN pip install jupyter
 
 # Build ndreg. Cache based on last commit.
 WORKDIR /work
-ADD https://api.github.com/repos/neurodata/ndreg/git/refs/heads/master version.json
-RUN git clone https://github.com/neurodata/ndreg.git /work/ndreg --branch master --single-branch
+ADD https://api.github.com/repos/neurodata/ndreg/git/refs/heads/vik-dev version.json
+RUN git clone https://github.com/neurodata/ndreg.git /work/ndreg --branch vik-dev --single-branch
 WORKDIR /work/ndreg
 RUN cmake . && make && make install
 

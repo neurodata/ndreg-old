@@ -29,7 +29,8 @@ ndServerDefault = "dev.neurodata.io"
 ndToSitkDataTypes = {'uint8': sitk.sitkUInt8,
                      'uint16': sitk.sitkUInt16,
                      'uint32': sitk.sitkUInt32,
-                     'float32': sitk.sitkFloat32}
+                     'float32': sitk.sitkFloat32,
+		     'uint64': sitk.sitkUInt64}
 
 
 sitkToNpDataTypes = {sitk.sitkUInt8: np.uint8,
