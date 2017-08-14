@@ -145,7 +145,6 @@ def imgRead(path):
 #Boss Stuff:
 def setup_experiment_boss(remote, collection, experiment):
     exp_setup = ExperimentResource(experiment, collection)
-    exp_setup._time_step_unit = 'seconds'
     try:
         exp_actual = remote.get_project(exp_setup)
         coord_setup = CoordinateFrameResource(exp_actual.coord_frame)
@@ -228,7 +227,7 @@ def get_offset_boss(coord_frame, res=0, isotropic=False):
 def imgUpload_boss(remote, img, channel_resource, coord_frame, resolution=0, start=[0,0,0], propagate=False, isotropic=False):
     if(img.GetDimension() == 2): img = sitk.JoinSeriesImageFilter().Execute(img)
     
-    data = sitk.GetArrayFromImage(img)
+    data = sitk.GetArrayFromImage(img) #data is C-ordered (z y x)
 
     offset = get_offset_boss(coord_frame, resolution, isotropic)
 
@@ -237,9 +236,9 @@ def imgUpload_boss(remote, img, channel_resource, coord_frame, resolution=0, sta
     st_x = start[0]
     st_y = start[1]
     st_z = start[2]
-    sp_x = st_x + np.shape(data)[0]
+    sp_x = st_x + np.shape(data)[2]
     sp_y = st_y + np.shape(data)[1]
-    sp_z = st_z + np.shape(data)[2]
+    sp_z = st_z + np.shape(data)[0]
 
     try:
         remote.create_cutout(channel_resource, resolution, 
