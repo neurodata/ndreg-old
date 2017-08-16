@@ -193,6 +193,7 @@ def imgDownload_boss(remote, channel_resource, coordinate_frame_resource, resolu
     
     spacingBoss = [coordinate_frame_resource.x_voxel_size, coordinate_frame_resource.y_voxel_size, coordinate_frame_resource.z_voxel_size]
     spacing = [x * fact_div for x in spacingBoss] # Convert spacing to mm
+    spacing = [x * 2**resolution for x in spacing]
 
     if size == []: size = get_image_size_boss(coordinate_frame_resource, resolution, isotropic)
     if start == []: start = get_offset_boss(coordinate_frame_resource, resolution, isotropic)
