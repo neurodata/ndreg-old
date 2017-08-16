@@ -196,8 +196,8 @@ def imgDownload_boss(remote, channel_resource, coordinate_frame_resource, resolu
     if isotropic:
 	spacing = [x * 2**resolution for x in spacing]
     else:
-	spacing[0] = spacing[0] / 2
-	spacing[1] = spacing[1] / 2
+	spacing[0] = spacing[0] * 2**resolution
+	spacing[1] = spacing[1] * 2**resolution
 	# z spacing unchanged since not isotropic
 
     if size == []: size = get_image_size_boss(coordinate_frame_resource, resolution, isotropic)
