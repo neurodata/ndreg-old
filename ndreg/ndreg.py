@@ -1153,7 +1153,7 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
         affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
     return affine
 
-def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, iterations=1000, inAffine=None,verbose=False, inMask=None, refMask=None, outDirPath=""):
+def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, iterations=1000, inAffine=None,verbose=False, inMask=None, refMask=None, outDirPath="", epsilon=0.1):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     origInImg = inImg
@@ -1184,7 +1184,7 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
         if outDirPath != "": dirMake(stepDirPath)
         if(verbose): print("Step {0}:".format(methodName))
 
-        affine = imgAffine(inImg, refImg, method=method, scale=scale, useNearest=useNearest, useMI=useMI, iterations=iterations, inMask=inMask, refMask=refMask, verbose=verbose)
+        affine = imgAffine(inImg, refImg, method=method, scale=scale, useNearest=useNearest, useMI=useMI, iterations=iterations, inMask=inMask, refMask=refMask, verbose=verbose, epsilon=epsilon)
         compositeAffine = affineApplyAffine(affine, compositeAffine)
 
         inImg = imgApplyAffine(origInImg, compositeAffine, size=refImg.GetSize())
