@@ -637,8 +637,8 @@ def imgZoom(img, point, size, spacing=[], useNearest=False, outsideValue=0):
         if len(spacing) != img.GetDimension(): raise Exception("len(spacing) != " + str(img.GetDimension()))
 
     origin = np.array(point) - np.array(size)*np.array(spacing)*0.5
-    return imgResample(img, spacing, size, useNearest, origin, outsideValue)
-
+    return imgResample(img, spacing, size, useNearest, origin, outsideValue)    
+    
 def imgPad(img, padding=0, useNearest=False):
     """
      Pads image by given ammount of padding in units spacing.
@@ -649,7 +649,7 @@ def imgPad(img, padding=0, useNearest=False):
          padding = [padding]*img.GetDimension()
      elif len(padding) != img.GetDimension():
          raise Exception("padding must have length {0}.".format(img.GetDimension()))
-
+     
      interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
      translationTransform = sitk.TranslationTransform(img.GetDimension(), -np.array(padding))
      spacing = img.GetSpacing()
