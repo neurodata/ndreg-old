@@ -830,13 +830,7 @@ def vtkReformat(inPath, outPath):
         outFile.write(line)
 
 
-def imgResample(
-        img,
-        spacing,
-        size=[],
-        useNearest=False,
-        origin=[],
-        outsideValue=0):
+def imgResample(img, spacing, size=[], useNearest=False, origin=[], outsideValue=0):
     """
     Resamples image to given spacing and size.
     """
