@@ -1823,7 +1823,7 @@ def imgShow(img, vmin=None, vmax=None, cmap=None, alpha=None, newFig=True, flip=
     if newFig: plt.show()
 
 
-"""
+
 def imgShowResults(inImg, refImg, field, logPath=""):
     numRows = 5
     numCols = 3
@@ -1863,7 +1863,7 @@ def imgShowResultsRow(img, numRows=1, numCols=3, rowIndex=0, title=""):
         ax.set_xticklabels([])
         if i == 0: plt.ylabel(title, rotation=0, labelpad=30)
         # plt.axis('off')
-"""
+
 
 
 def imgGrid(size, spacing, step=[10, 10, 10], field=None):
