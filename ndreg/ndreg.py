@@ -844,16 +844,15 @@ def imgZoom(img, point, size, spacing=[], useNearest=False, outsideValue=0):
 
 def imgPad(img, padding=0, useNearest=False):
     """
-     Pads image by given ammount of padding in units spacing.
-     For example if the input image has a voxel spacing of 0.5 and the padding=2.0 then the image will be padded by 4 voxels.
-     If the padding < 0 then the filter crops the image
-     """
-     if isNumber(padding):
-         padding = [padding] * img.GetDimension()
-     elif len(padding) != img.GetDimension():
-         raise Exception(
-    "padding must have length {0}.".format(
-        img.GetDimension()))
+    Pads image by given ammount of padding in units spacing.
+    For example if the input image has a voxel spacing of 0.5 and the padding=2.0 then the image will be padded by 4 voxels.
+    If the padding < 0 then the filter crops the image
+    """
+    if isNumber(padding):
+        padding = [padding] * img.GetDimension()
+    elif len(padding) != img.GetDimension():
+        raise Exception(
+    "padding must have length {0}.".format(img.GetDimension()))
 
      interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
      translationTransform = sitk.TranslationTransform(
@@ -861,11 +860,11 @@ def imgPad(img, padding=0, useNearest=False):
      spacing = img.GetSpacing()
      size = list(img.GetSize())
      for i in range(img.GetDimension()):
-         if padding[i] > 0:
-             paddingVoxel = int(math.ceil(2 * padding[i] / spacing[i]))
-         else:
-             paddingVoxel = int(math.floor(2 * padding[i] / spacing[i]))
-          size[i]+=paddingVoxel
+        if padding[i] > 0:
+            paddingVoxel = int(math.ceil(2 * padding[i] / spacing[i]))
+        else:
+            paddingVoxel = int(math.floor(2 * padding[i] / spacing[i]))
+        size[i]+=paddingVoxel
 
      origin = [0]*img.GetDimension()
      return sitk.Resample(img, size, translationTransform, interpolator, origin, spacing)
