@@ -4,7 +4,13 @@ from __future__ import print_function
 import numpy as np
 import SimpleITK as sitk
 import ndio.remote.neurodata as neurodata
-import os, math, sys, subprocess, tempfile, shutil, requests
+import os
+import math
+import sys
+import subprocess
+import tempfile
+import shutil
+import requests
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 from itertools import product
@@ -16,15 +22,15 @@ from intern.resource.boss.resource import *
 import requests
 from requests import HTTPError
 
-requests.packages.urllib3.disable_warnings() # Disable InsecureRequestWarning
+requests.packages.urllib3.disable_warnings()  # Disable InsecureRequestWarning
 dimension = 3
 vectorComponentType = sitk.sitkFloat32
 vectorType = sitk.sitkVectorFloat32
 affine = sitk.AffineTransform(dimension)
 identityAffine = list(affine.GetParameters())
 identityDirection = identityAffine[0:9]
-zeroOrigin = [0]*dimension
-zeroIndex = [0]*dimension
+zeroOrigin = [0] * dimension
+zeroIndex = [0] * dimension
 
 ndServerDefault = "dev.neurodata.io"
 ndToSitkDataTypes = {'uint8': sitk.sitkUInt8,
@@ -45,19 +51,19 @@ sitkToNpDataTypes = {sitk.sitkUInt8: np.uint8,
         }
 
 
-ndregDirPath = os.path.dirname(os.path.realpath(__file__))+"/"
+ndregDirPath = os.path.dirname(os.path.realpath(__file__)) + "/"
 ndregTranslation = 0
-ndregScale = 1 
-ndregRigid = 2 #1
-ndregAffine = 3 #2
-
+ndregScale = 1
+ndregRigid = 2  # 1
+ndregAffine = 3  # 2
 
 
 def isIterable(variable):
     """
     Returns True if variable is a list, tuple or any other iterable object
     """
-    return hasattr(variable,'__iter__')
+    return hasattr(variable, '__iter__')
+
 
 def isNumber(variable):
     """
@@ -69,25 +75,34 @@ def isNumber(variable):
         return False
     return True
 
+
 def isInteger(n, epsilon=1e-6):
     """
     Returns True if n is integer within error epsilon
     """
     return (n - int(n)) < epsilon
 
+
 def run(command, checkReturnValue=True, verbose=False):
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
+    process = subprocess.Popen(
+    command,
+    shell=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    universal_newlines=True,
+     bufsize=1)
     outText = ""
 
     for line in iter(process.stdout.readline, ''):
-        if verbose:  sys.stdout.write(line)
+        if verbose: sys.stdout.write(line)
         outText += line
-    #process.wait()
+    # process.wait()
     process.communicate()[0]
     returnValue = process.returncode
     if checkReturnValue and (returnValue != 0): raise Exception(outText)
 
     return (returnValue, outText)
+
 
 def txtWrite(text, path, mode="w"):
     """
@@ -98,20 +113,24 @@ def txtWrite(text, path, mode="w"):
     print(text, file=textFile)
     textFile.close()
 
+
 def txtRead(path):
     """
     Conveinence function to read text from file at specified path
     """
-    textFile = open(path,"r")
+    textFile = open(path, "r")
     text = textFile.read()
     textFile.close()
     return text
 
+
 def txtReadList(path):
-    return map(float,txtRead(path).split())
+    return map(float, txtRead(path).split())
+
 
 def txtWriteList(parameterList, path):
-    txtWrite(" ".join(map(str,parameterList)), path)
+    txtWrite(" ".join(map(str, parameterList)), path)
+
 
 def dirMake(dirPath):
     if dirPath != "":
@@ -126,7 +145,9 @@ def imgHM(inImg, refImg, numMatchPoints=64, numBins=256):
     Histogram matches input image to reference image and writes result to output image
     """
     inImg = sitk.Cast(inImg, refImg.GetPixelID())
-    return  sitk.HistogramMatchingImageFilter().Execute(inImg, refImg, numBins, numMatchPoints, False)
+    return sitk.HistogramMatchingImageFilter().Execute(
+        inImg, refImg, numBins, numMatchPoints, False)
+
 
 def imgRead(path):
     """
@@ -134,31 +155,46 @@ def imgRead(path):
     """
 
     inImg = sitk.ReadImage(path)
-    inImg = imgCollaspeDimension(inImg) ###
-    #if(inImg.GetDimension() == 2): inImg = sitk.JoinSeriesImageFilter().Execute(inImg)
+    inImg = imgCollaspeDimension(inImg)
+    # if(inImg.GetDimension() == 2): inImg =
+    # sitk.JoinSeriesImageFilter().Execute(inImg)
 
     inDimension = inImg.GetDimension()
     inImg.SetDirection(sitk.AffineTransform(inDimension).GetMatrix())
-    inImg.SetOrigin([0]*inDimension)
+    inImg.SetOrigin([0] * inDimension)
 
     return inImg
 
-#Boss Stuff:
+# Boss Stuff:
+
+
 def setup_experiment_boss(remote, collection, experiment):
     exp_setup = ExperimentResource(experiment, collection)
     try:
         exp_actual = remote.get_project(exp_setup)
         coord_setup = CoordinateFrameResource(exp_actual.coord_frame)
-        coord_actual= remote.get_project(coord_setup)
+        coord_actual = remote.get_project(coord_setup)
         return (exp_setup, coord_actual)
     except HTTPError as e:
         print(e.message)
 
 
-def setup_channel_boss(remote, collection, experiment, channel, channel_type='image', datatype='uint16'):
-    (exp_setup, coord_actual) = setup_experiment_boss(remote, collection, experiment)
+def setup_channel_boss(
+    remote,
+    collection,
+    experiment,
+    channel,
+    channel_type='image',
+     datatype='uint16'):
+    (exp_setup, coord_actual) = setup_experiment_boss(
+        remote, collection, experiment)
 
-    chan_setup = ChannelResource(channel, collection, experiment, channel_type, datatype=datatype)
+    chan_setup = ChannelResource(
+    channel,
+    collection,
+    experiment,
+    channel_type,
+     datatype=datatype)
     try:
         chan_actual = remote.get_project(chan_setup)
         return (exp_setup, coord_actual, chan_actual)
@@ -167,24 +203,28 @@ def setup_channel_boss(remote, collection, experiment, channel, channel_type='im
 
 
 # Note: The following functions assume an anisotropic dataset. This is generally a bad assumption. These
-# functions are stopgaps until proper coordinate frame at resulution support exists in intern.
+# functions are stopgaps until proper coordinate frame at resulution
+# support exists in intern.
 def get_xyz_extents(rmt, ch_rsc, res=0, iso=True):
     boss_url = 'https://api.boss.neurodata.io/v1/'
-    ds = boss_url + '/downsample/{}?iso={}'.format(ch_rsc.get_cutout_route(),iso)
-    headers = {'Authorization': 'Token ' + rmt.token_project} 
-    r_ds = requests.get(ds, headers = headers)
-    response= r_ds.json()
+    ds = boss_url + \
+        '/downsample/{}?iso={}'.format(ch_rsc.get_cutout_route(), iso)
+    headers = {'Authorization': 'Token ' + rmt.token_project}
+    r_ds = requests.get(ds, headers=headers)
+    response = r_ds.json()
     x_range = [0, response['extent']['{}'.format(res)][0]]
     y_range = [0, response['extent']['{}'.format(res)][1]]
     z_range = [0, response['extent']['{}'.format(res)][2]]
     spacing = response['voxel_size']['{}'.format(res)]
     return (x_range, y_range, z_range, spacing)
 
+
 def get_offset_boss(coord_frame, res=0, isotropic=False):
     return [
-        int(coord_frame.x_start / (2.**res)), 
+        int(coord_frame.x_start / (2.**res)),
         int(coord_frame.y_start / (2.**res)),
         int(coord_frame.z_start / (2.**res)) if isotropic else coord_frame.z_start]
+
 
 def get_image_size_boss(coord_frame, res=0, isotropic=False):
     return [
@@ -192,7 +232,15 @@ def get_image_size_boss(coord_frame, res=0, isotropic=False):
         int(coord_frame.y_stop / (2.**res)),
         int(coord_frame.z_stop / (2.**res)) if isotropic else coord_frame.z_stop]
 
-def imgDownload_boss(remote, channel_resource, coordinate_frame_resource, resolution=0, size=[], start=[], isotropic=False):
+
+def imgDownload_boss(
+    remote,
+    channel_resource,
+    coordinate_frame_resource,
+    resolution=0,
+    size=[],
+    start=[],
+     isotropic=False):
     """
     Download image with given token from given server at given resolution.
     If channel isn't specified the first channel is downloaded.
@@ -204,8 +252,11 @@ def imgDownload_boss(remote, channel_resource, coordinate_frame_resource, resolu
     factor_divide = (1e-6, 1e-3, 1, 10)
     fact_div = factor_divide[voxel_units.index(voxel_unit)]
 
-    spacingBoss = [coordinate_frame_resource.x_voxel_size, coordinate_frame_resource.y_voxel_size, coordinate_frame_resource.z_voxel_size]
-    spacing = [x * fact_div for x in spacingBoss] # Convert spacing to mm
+    spacingBoss = [
+    coordinate_frame_resource.x_voxel_size,
+    coordinate_frame_resource.y_voxel_size,
+     coordinate_frame_resource.z_voxel_size]
+    spacing = [x * fact_div for x in spacingBoss]  # Convert spacing to mm
     if isotropic:
         spacing = [x * 2**resolution for x in spacing]
     else:
@@ -217,18 +268,23 @@ def imgDownload_boss(remote, channel_resource, coordinate_frame_resource, resolu
     if start == []: start = get_offset_boss(coordinate_frame_resource, resolution, isotropic)
     if isotropic: x_range, y_range, z_range, spacing = get_xyz_extents(remote, channel_resource, res=resolution, iso=isotropic)
 
-    #size[2] = 200
-    #dataType = metadata['channels'][channel]['datatype']
+    # size[2] = 200
+    # dataType = metadata['channels'][channel]['datatype']
     dataType = channel_resource.datatype
 
     # Download all image data from specified channel
-    array = remote.get_cutout(channel_resource, resolution, [start[0], size[0]], [start[1], size[1]], [start[2], size[2]])
+    array = remote.get_cutout(
+    channel_resource, resolution, [
+        start[0], size[0]], [
+            start[1], size[1]], [
+                start[2], size[2]])
 
     # Cast downloaded image to server's data type
-    img = sitk.Cast(sitk.GetImageFromArray(array),ndToSitkDataTypes[dataType]) # convert numpy array to sitk image
+    # convert numpy array to sitk image
+    img = sitk.Cast(sitk.GetImageFromArray(array), ndToSitkDataTypes[dataType])
 
     # Reverse axes order
-    #img = sitk.PermuteAxesImageFilter().Execute(img,range(dimension-1,-1,-1))
+    # img = sitk.PermuteAxesImageFilter().Execute(img,range(dimension-1,-1,-1))
     img.SetDirection(identityDirection)
     img.SetSpacing(spacing)
 
@@ -240,14 +296,25 @@ def imgDownload_boss(remote, channel_resource, coordinate_frame_resource, resolu
 
 def get_offset_boss(coord_frame, res=0, isotropic=False):
     return [
-            int(coord_frame.x_start / (2.**res)), 
+            int(coord_frame.x_start / (2.**res)),
             int(coord_frame.y_start / (2.**res)),
             int(coord_frame.z_start / (2.**res)) if isotropic else coord_frame.z_start]
 
-    def imgUpload_boss(remote, img, channel_resource, coord_frame, resolution=0, start=[0,0,0], propagate=False, isotropic=False):
+    def imgUpload_boss(
+    remote,
+    img,
+    channel_resource,
+    coord_frame,
+    resolution=0,
+    start=[
+        0,
+        0,
+        0],
+        propagate=False,
+         isotropic=False):
         if(img.GetDimension() == 2): img = sitk.JoinSeriesImageFilter().Execute(img)
 
-    data = sitk.GetArrayFromImage(img) #data is C-ordered (z y x)
+    data = sitk.GetArrayFromImage(img)  # data is C-ordered (z y x)
 
     offset = get_offset_boss(coord_frame, resolution, isotropic)
 
@@ -261,7 +328,7 @@ def get_offset_boss(coord_frame, res=0, isotropic=False):
     sp_z = st_z + np.shape(data)[0]
 
     try:
-        remote.create_cutout(channel_resource, resolution, 
+        remote.create_cutout(channel_resource, resolution,
                 [st_x, sp_x], [st_y, sp_y], [st_z, sp_z], data)
         print('Upload success')
     except Exception as e:
@@ -269,7 +336,15 @@ def get_offset_boss(coord_frame, res=0, isotropic=False):
         print('Exception occurred: {}'.format(e))
         raise(e)
 
-def imgDownload(token, channel="", resolution=0, server=ndServerDefault, userToken="", size=[], start=[]):
+
+def imgDownload(
+    token,
+    channel="",
+    resolution=0,
+    server=ndServerDefault,
+    userToken="",
+    size=[],
+     start=[]):
     """
     Download image with given token from given server at given resolution.
     If channel isn't specified the first channel is downloaded.
@@ -278,7 +353,10 @@ def imgDownload(token, channel="", resolution=0, server=ndServerDefault, userTok
 
     # Create neurodata instance
     if userToken != "":
-        nd = neurodata(suppress_warnings=True, hostname=server, user_token=userToken)
+        nd = neurodata(
+    suppress_warnings=True,
+    hostname=server,
+     user_token=userToken)
     else:
         nd = neurodata(suppress_warnings=True, hostname=server)
 
@@ -286,28 +364,40 @@ def imgDownload(token, channel="", resolution=0, server=ndServerDefault, userTok
     channelList = nd.get_channels(token).keys()
     if len(channelList) == 0:
         raise Exception("No channels defined for given token.")
-    elif channel == "": 
-        channel = channelList[0] 
+    elif channel == "":
+        channel = channelList[0]
     elif not(channel in channelList):
-        raise Exception("Channel '{0}' does not exist for given token.".format(channel))
+        raise Exception(
+    "Channel '{0}' does not exist for given token.".format(channel))
 
     # Get image spacing, size, offset and data type from server
     metadata = nd.get_proj_info(token)
-    spacingNm = metadata[u'dataset'][u'voxelres'][unicode(str(resolution))] # Returns spacing in nanometers 
-    spacing = [x * 1e-6 for x in spacingNm] # Convert spacing to mm
+    spacingNm = metadata[u'dataset'][u'voxelres'][unicode(
+        str(resolution))]  # Returns spacing in nanometers
+    spacing = [x * 1e-6 for x in spacingNm]  # Convert spacing to mm
 
     if size == []: size = nd.get_image_size(token, resolution)
     if start == []: start = nd.get_image_offset(token, resolution)
     dataType = metadata['channels'][channel]['datatype']
 
     # Download all image data from specified channel
-    array = nd.get_cutout(token, channel, start[0], size[0], start[1], size[1], start[2], size[2], resolution)
+    array = nd.get_cutout(
+    token,
+    channel,
+    start[0],
+    size[0],
+    start[1],
+    size[1],
+    start[2],
+    size[2],
+     resolution)
 
     # Cast downloaded image to server's data type
-    img = sitk.Cast(sitk.GetImageFromArray(array),ndToSitkDataTypes[dataType]) # convert numpy array to sitk image
+    # convert numpy array to sitk image
+    img = sitk.Cast(sitk.GetImageFromArray(array), ndToSitkDataTypes[dataType])
 
     # Reverse axes order
-    img = sitk.PermuteAxesImageFilter().Execute(img,range(dimension-1,-1,-1))
+    img = sitk.PermuteAxesImageFilter().Execute(img, range(dimension - 1, -1, -1))
     img.SetDirection(identityDirection)
     img.SetSpacing(spacing)
 
@@ -316,26 +406,42 @@ def imgDownload(token, channel="", resolution=0, server=ndServerDefault, userTok
 
     return img
 
+
 def imgCopy(img):
     """
     Returns a copy of the input image
     """
     return sitk.Image(img)
 
+
 def limsGetMetadata(token):
     nd = neurodata()
     r = requests.get(nd.meta_url("metadata/ocp/get/" + token))
     return r.json()
 
+
 def projGetMetadata(token):
     nd = neurodata()
     return nd.get_proj_info(token)
+
 
 def limsSetMetadata(token, metadata):
     nd = neurodata()
     nd.set_metadata(token, metadata)
 
-def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolution=0, outDirPath="", doSteps=[1,1,1], verbose=True):
+
+def imgPreprocess(
+    inToken,
+    refToken="",
+    inChannel="",
+    inResolution=0,
+    refResolution=0,
+    outDirPath="",
+    doSteps=[
+        1,
+        1,
+        1],
+         verbose=True):
     """
     Downloads, resamples and reorients input image to the spacing and orientation of the reference image.
     This function assumes that the input token (and reference token if used) has a corresponding LIMS token.
@@ -351,15 +457,17 @@ def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolut
     nd = neurodata()
 
     # Set reference default spacing and orientation
-    refSpacing = [0.025, 0.025, 0.025] 
-    refOrient = "rsa" # Coronal sliced images
+    refSpacing = [0.025, 0.025, 0.025]
+    refOrient = "rsa"  # Coronal sliced images
 
     if refToken != "":
         # Get project metadata for reference token
         try:
             refProjMetadata = nd.get_proj_info(refToken)
         except:
-            raise Exception("Reference project token {0} was not found on server {1}".format(refToken, nd.hostname))
+            raise Exception(
+    "Reference project token {0} was not found on server {1}".format(
+        refToken, nd.hostname))
 
         # Get lims metadata (spacing and orientation) of reference token
         refLimsMetadata = limsGetMetadata(refToken)
@@ -367,9 +475,10 @@ def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolut
         if "spacing" in refLimsMetadata:
             refSpacing = refLimsMetadata["spacing"]
 
-            # Scale reference spacing values of input image based on resolution level
-            for i in range(0, dimension-1): refSpacing[i] *= 2**refResolution
-            if refProjMetadata['dataset']['scaling'] != 'zslices': refSpacing[dimension-1] *= 2**refResolution
+            # Scale reference spacing values of input image based on resolution
+            # level
+            for i in range(0, dimension - 1): refSpacing[i] *= 2**refResolution
+            if refProjMetadata['dataset']['scaling'] != 'zslices': refSpacing[dimension - 1] *= 2**refResolution
             else:
                 if verbose: print("Warning: Reference LIMS token {0} does not have an \"spacing\" feild. Using value of {1} from project token {0}".format(refToken, refSpacing))
 
@@ -382,50 +491,57 @@ def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolut
     try:
         inProjMetadata = nd.get_proj_info(inToken)
     except:
-        raise Exception("Token {0} was not found on server {1}".format(inToken, nd.hostname))
+        raise Exception(
+    "Token {0} was not found on server {1}".format(
+        inToken, nd.hostname))
 
     # Get lims metadata for input token
     inLimsMetadata = limsGetMetadata(inToken)
 
-    # Download input image 
+    # Download input image
     if doSteps[0]:
         if verbose: print("Downloading input image")
-        inImg = imgDownload(inToken, channel=inChannel, resolution=inResolution)
+        inImg = imgDownload(
+    inToken,
+    channel=inChannel,
+     resolution=inResolution)
 
         # Check if downloaded image is empty
-        epsilon = sys.float_info.epsilon    
+        epsilon = sys.float_info.epsilon
         stats = sitk.StatisticsImageFilter()
         stats.Execute(inImg)
 
         if (stats.GetMean() < epsilon) and (stats.GetVariance() < epsilon):
-            raise Exception("Error: Input image downoaded from token {0} is empty".format(inToken))
+            raise Exception(
+    "Error: Input image downoaded from token {0} is empty".format(inToken))
 
         inSpacing = inImg.GetSpacing()
 
-        # Set input image's spacing based on lims metadata 
+        # Set input image's spacing based on lims metadata
         if 'spacing' in inLimsMetadata.keys():
-            # If lims metadata contains a spacing field then set spacing of downloaded image using it
+            # If lims metadata contains a spacing field then set spacing of
+            # downloaded image using it
             inSpacing = inLimsMetadata['spacing']
 
             # Scale spacing values of input image based on resolution level
-            for i in range(0, dimension-1): inSpacing[i] *= 2**inResolution
-            if inProjMetadata['dataset']['scaling'] != 'zslices': inSpacing[dimension-1] *= 2**inResolution
+            for i in range(0, dimension - 1): inSpacing[i] *= 2**inResolution
+            if inProjMetadata['dataset']['scaling'] != 'zslices': inSpacing[dimension - 1] *= 2**inResolution
             inImg.SetSpacing(inSpacing)
         else:
             if verbose: print("Warning: LIMS token {0} does not have an \"spacing\" feild.  Using value of {1} from project token {0}".format(inToken, inSpacing))
 
-        if outDirPath != "": imgWrite(inImg,outDirPath+"/0_download/in.img")
+        if outDirPath != "": imgWrite(inImg, outDirPath + "/0_download/in.img")
 
     # Resample input image to spacing of reference image
     if doSteps[1]:
         if verbose: print("Resampling input image")
-        if outDirPath != "": inImg = imgRead(outDirPath+"/0_download/in.img")
+        if outDirPath != "": inImg = imgRead(outDirPath + "/0_download/in.img")
         inImg = imgResample(inImg, refSpacing)
-        if outDirPath != "": imgWrite(inImg,outDirPath+"/1_resample/in.img")
+        if outDirPath != "": imgWrite(inImg, outDirPath + "/1_resample/in.img")
 
     # Reorient input image to orientation of reference image
     if doSteps[2]:
-        if outDirPath != "": inImg = imgRead(outDirPath+"/1_resample/in.img")
+        if outDirPath != "": inImg = imgRead(outDirPath + "/1_resample/in.img")
         if "orientation" in inLimsMetadata.keys():
             if verbose: print("Reorienting input image")
             # If lims metadata contains a orientation field then reorient image
@@ -433,7 +549,8 @@ def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolut
             inImg = imgReorient(inImg, inOrient, refOrient)
 
             """
-            # If there's there's affine info for the reference orientation then apply it
+            # If there's there's affine info for the reference orientation then
+            # apply it
             if refOrient+"Affine" in inLimsMetadata.keys():
                 affine = inLimsMetadata[refOrient+"Affine"]
                 inImg = imgApplyAffine(inImg, affine, size=inImg.GetSize())
@@ -441,21 +558,32 @@ def imgPreprocess(inToken, refToken="", inChannel="", inResolution=0, refResolut
         else:
             if verbose: print("Warning: LIMS token {0} does not have an \"orientation\" feild. Could not reorient image.".format(inToken))
 
-        if outDirPath != "": imgWrite(inImg,outDirPath+"/2_reorient/in.img")
+        if outDirPath != "": imgWrite(inImg, outDirPath + "/2_reorient/in.img")
 
-    if outDirPath != "": 
-        imgWrite(inImg, outDirPath+"/in.img")
+    if outDirPath != "":
+        imgWrite(inImg, outDirPath + "/in.img")
 
     return inImg
 
-def imgPostprocess(inImg, refToken, outToken, outChannel="", useNearest=False, doSteps=[1,1], verbose=False, outDirPath=""):
+
+def imgPostprocess(
+    inImg,
+    refToken,
+    outToken,
+    outChannel="",
+    useNearest=False,
+    doSteps=[
+        1,
+        1],
+        verbose=False,
+         outDirPath=""):
     if outDirPath != "": outDirPath = dirMake(outDirPath)
 
     refLimsMetadata = limsGetMetadata(refToken)
     refOrient = refLimsMetadata["orientation"]
 
     outProjMetadata = projGetMetadata(outToken)
-    inToken = outProjMetadata["dataset"]["name"] 
+    inToken = outProjMetadata["dataset"]["name"]
     inLimsMetadata = limsGetMetadata(inToken)
     inOrient = inLimsMetadata["orientation"]
 
@@ -464,28 +592,59 @@ def imgPostprocess(inImg, refToken, outToken, outChannel="", useNearest=False, d
         """
         if refOrient+"Affine" in inLimsMetadata.keys():
             invAffine = affineInverse(inLimsMetadata[refOrient+"Affine"])
-            inImg = imgApplyAffine(inImg, invAffine, useNearest=useNearest, size=inImg.GetSize())
+            inImg = imgApplyAffine(
+    inImg,
+    invAffine,
+    useNearest=useNearest,
+     size=inImg.GetSize())
         """
         inImg = imgReorient(inImg, refOrient, inOrient)
-        if outDirPath !="": imgWrite(inImg, outDirPath+"0_reorient/in.img")
+        if outDirPath != "": imgWrite(inImg, outDirPath + "0_reorient/in.img")
 
     if doSteps[1]:
         nd = neurodata()
         outResolution = 5
         outSpacing = inLimsMetadata["spacing"]
-        outSize = list(np.array(nd.get_image_size(outToken, outResolution)) - np.array(nd.get_image_offset(outToken, outResolution)))    
+        outSize = list(
+    np.array(
+        nd.get_image_size(
+            outToken,
+            outResolution)) -
+            np.array(
+                nd.get_image_offset(
+                    outToken,
+                     outResolution)))
 
-        for i in range(dimension-1): outSpacing[i] *= 2**outResolution
-        if outProjMetadata["dataset"]["scaling"] != "zslices": outSpacing[dimension-1] *= 2**outResolution
+        for i in range(dimension - 1): outSpacing[i] *= 2**outResolution
+        if outProjMetadata["dataset"]["scaling"] != "zslices": outSpacing[dimension - 1] *= 2**outResolution
 
-        inImg = imgResample(inImg, spacing=outSpacing, size=outSize, useNearest=useNearest)
-        if outDirPath !="": imgWrite(inImg, outDirPath+"1_resample/in.img")
+        inImg = imgResample(
+    inImg,
+    spacing=outSpacing,
+    size=outSize,
+     useNearest=useNearest)
+        if outDirPath != "": imgWrite(inImg, outDirPath + "1_resample/in.img")
 
         if verbose: print("Uploading results")
-        imgUpload(inImg, outToken, channel=outChannel, resolution=outResolution)
+        imgUpload(
+    inImg,
+    outToken,
+    channel=outChannel,
+     resolution=outResolution)
 
 
-def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server=ndServerDefault, userToken="",  propagate=False):
+def imgUpload(
+    img,
+    token,
+    channel="",
+    resolution=0,
+    start=[
+        0,
+        0,
+        0],
+        server=ndServerDefault,
+        userToken="",
+         propagate=False):
     """
     Upload image with given token from given server at given resolution.
     If channel isn't specified image is uploaded to default channel
@@ -493,7 +652,10 @@ def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server=ndServ
     # Create neurodata instance
 
     if userToken != "":
-        nd = neurodata(suppress_warnings=True, hostname=server, user_token=userToken)
+        nd = neurodata(
+    suppress_warnings=True,
+    hostname=server,
+     user_token=userToken)
     else:
         nd = neurodata(suppress_warnings=True, hostname=server)
 
@@ -501,17 +663,18 @@ def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server=ndServ
     channelList = nd.get_channels(token).keys()
     if len(channelList) == 0:
         raise Exception("No channels defined for token {0}.".format(token))
-    elif channel == "": 
+    elif channel == "":
         channel = channelList[0]
     elif not(channel in channelList):
-        raise Exception("Channel '{0}' does not exist for given token.".format(channel))
+        raise Exception(
+    "Channel '{0}' does not exist for given token.".format(channel))
 
     # Make input image 3D
     if(img.GetDimension() == 2): img = sitk.JoinSeriesImageFilter().Execute(img)
 
     # Convert with RGB or RGBA multi-component images to uint32
     numComponents = img.GetNumberOfComponentsPerPixel()
-    if numComponents in [3,4]:
+    if numComponents in [3, 4]:
         for component in range(numComponents):
             #  Extract component
             caster = sitk.VectorIndexSelectionCastImageFilter()
@@ -523,17 +686,19 @@ def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server=ndServ
 
             componentMin = np.iinfo(componentDatatype).min
             componentMax = np.iinfo(componentDatatype).max
-            componentImg = sitk.IntensityWindowingImageFilter().Execute(componentImg, componentMin, componentMax, 0, 255)
+            componentImg = sitk.IntensityWindowingImageFilter().Execute(
+                componentImg, componentMin, componentMax, 0, 255)
             componentImg = sitk.Cast(componentImg, sitk.sitkUInt32)
 
-            # Create RGBA image with red component in lowest order byte followed by green and blue (and alpha)
+            # Create RGBA image with red component in lowest order byte
+            # followed by green and blue (and alpha)
             if component == 0:
                 uint32Img = componentImg * 256**component
             else:
                 uint32Img += componentImg * 256**component
 
         # Fill alpha byte if no alpha component was given
-        if numComponents == 3: uint32Img += 255*256**3
+        if numComponents == 3: uint32Img += 255 * 256**3
         img = uint32Img
 
     elif numComponents == 2 or numComponents > 4:
@@ -542,10 +707,15 @@ def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server=ndServ
     # Get image size from server
     offset = nd.get_image_offset(token, resolution)
 
-    serverSize = list(np.array(nd.get_image_size(token, resolution)) - np.array(offset))    
+    serverSize = list(
+    np.array(
+        nd.get_image_size(
+            token,
+            resolution)) -
+             np.array(offset))
     imgSize = img.GetSize()
 
-    # Raise exception if input image is too big 
+    # Raise exception if input image is too big
     for i in range(img.GetDimension()):
         if imgSize[i] > serverSize[i]: raise Exception("Input image with size {0} excedes bounds of token {1} with size {2}".format(imgSize, token, datasetSize))
 
@@ -554,16 +724,28 @@ def imgUpload(img, token, channel="", resolution=0, start=[0,0,0], server=ndServ
     dataType = metadata['channels'][channel]['datatype']
 
     # Cast input image to server's data type
-    castImg = sitk.Cast(img,ndToSitkDataTypes[dataType])
+    castImg = sitk.Cast(img, ndToSitkDataTypes[dataType])
 
-    # Reverse axis order    
-    array = sitk.GetArrayFromImage(castImg).transpose(range(img.GetDimension()-1,-1,-1))
+    # Reverse axis order
+    array = sitk.GetArrayFromImage(castImg).transpose(
+        range(img.GetDimension() - 1, -1, -1))
 
     # Upload all image data from specified channel
-    nd.post_cutout(token, channel, offset[0]+start[0], offset[1]+start[1], offset[2]+start[2], data=array, resolution=resolution)    
+    nd.post_cutout(
+    token,
+    channel,
+    offset[0] +
+    start[0],
+    offset[1] +
+    start[1],
+    offset[2] +
+    start[2],
+    data=array,
+     resolution=resolution)
 
     # Propagate
     if propagate: nd.propagate(token, channel)
+
 
 def imgWrite(img, path):
     """
@@ -576,30 +758,38 @@ def imgWrite(img, path):
     ext = os.path.splitext(path)[1].lower()
     if ext == ".vtk": vtkReformat(path, path)
 
+
 def vtkReformat(inPath, outPath):
     """
     Reformats vtk file so that it can be read by CIS software.
     """
     # Get size of map
-    inFile = open(inPath,"rb")
+    inFile = open(inPath, "rb")
     lineList = inFile.readlines()
     for line in lineList:
         if line.lower().strip().startswith("dimensions"):
-            size = map(int,line.split(" ")[1:dimension+1])
+            size = map(int, line.split(" ")[1:dimension + 1])
             break
     inFile.close()
 
     if dimension == 2: size += [0]
 
-    outFile = open(outPath,"wb")
-    for (i,line) in enumerate(lineList):
+    outFile = open(outPath, "wb")
+    for (i, line) in enumerate(lineList):
         if i == 1:
             newline = line.lstrip(line.rstrip("\n"))
-            line = "lddmm 8 0 0 {0} {0} 0 0 {1} {1} 0 0 {2} {2}".format(size[2]-1, size[1]-1, size[0]-1) + newline
+            line = "lddmm 8 0 0 {0} {0} 0 0 {1} {1} 0 0 {2} {2}".format(
+                size[2] - 1, size[1] - 1, size[0] - 1) + newline
         outFile.write(line)
 
 
-def imgResample(img, spacing, size=[], useNearest=False, origin=[], outsideValue=0):
+def imgResample(
+    img,
+    spacing,
+    size=[],
+    useNearest=False,
+    origin=[],
+     outsideValue=0):
     """
     Resamples image to given spacing and size.
     """
@@ -609,21 +799,33 @@ def imgResample(img, spacing, size=[], useNearest=False, origin=[], outsideValue
     if size == []:
         inSpacing = img.GetSpacing()
         inSize = img.GetSize()
-        size = [int(math.ceil(inSize[i]*(inSpacing[i]/spacing[i]))) for i in range(img.GetDimension())]
+        size = [int(math.ceil(inSize[i] * (inSpacing[i] / spacing[i])))
+                    for i in range(img.GetDimension())]
     else:
         if len(size) != img.GetDimension(): raise Exception("len(size) != " + str(img.GetDimension()))
 
     if origin == []:
-        origin = [0]*img.GetDimension()
+        origin = [0] * img.GetDimension()
     else:
         if len(origin) != img.GetDimension(): raise Exception("len(origin) != " + str(img.GetDimension()))
 
     # Resample input image
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
     identityTransform = sitk.Transform()
-    identityDirection = list(sitk.AffineTransform(img.GetDimension()).GetMatrix())
+    identityDirection = list(
+    sitk.AffineTransform(
+        img.GetDimension()).GetMatrix())
 
-    return sitk.Resample(img, size, identityTransform, interpolator, origin, spacing, identityDirection, outsideValue)
+    return sitk.Resample(
+    img,
+    size,
+    identityTransform,
+    interpolator,
+    origin,
+    spacing,
+    identityDirection,
+     outsideValue)
+
 
 def imgZoom(img, point, size, spacing=[], useNearest=False, outsideValue=0):
     """
@@ -636,9 +838,10 @@ def imgZoom(img, point, size, spacing=[], useNearest=False, outsideValue=0):
     else:
         if len(spacing) != img.GetDimension(): raise Exception("len(spacing) != " + str(img.GetDimension()))
 
-    origin = np.array(point) - np.array(size)*np.array(spacing)*0.5
-    return imgResample(img, spacing, size, useNearest, origin, outsideValue)    
-    
+    origin = np.array(point) - np.array(size) * np.array(spacing) * 0.5
+    return imgResample(img, spacing, size, useNearest, origin, outsideValue)
+
+
 def imgPad(img, padding=0, useNearest=False):
     """
      Pads image by given ammount of padding in units spacing.
@@ -646,19 +849,22 @@ def imgPad(img, padding=0, useNearest=False):
      If the padding < 0 then the filter crops the image
      """
      if isNumber(padding):
-         padding = [padding]*img.GetDimension()
+         padding = [padding] * img.GetDimension()
      elif len(padding) != img.GetDimension():
-         raise Exception("padding must have length {0}.".format(img.GetDimension()))
-     
+         raise Exception(
+    "padding must have length {0}.".format(
+        img.GetDimension()))
+
      interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
-     translationTransform = sitk.TranslationTransform(img.GetDimension(), -np.array(padding))
+     translationTransform = sitk.TranslationTransform(
+         img.GetDimension(), -np.array(padding))
      spacing = img.GetSpacing()
      size = list(img.GetSize())
      for i in range(img.GetDimension()):
          if padding[i] > 0:
-             paddingVoxel = int(math.ceil(2*padding[i] / spacing[i]))
+             paddingVoxel = int(math.ceil(2 * padding[i] / spacing[i]))
          else:
-             paddingVoxel = int(math.floor(2*padding[i] / spacing[i]))
+             paddingVoxel = int(math.floor(2 * padding[i] / spacing[i]))
           size[i]+=paddingVoxel
 
      origin = [0]*img.GetDimension()
@@ -1036,7 +1242,7 @@ def fieldApplyField(inField, field, size=[], spacing=[]):
 
     # Combine transforms
     outTransform = sitk.Transform(transform)
-    #outTransform.AddTransform(transform)
+    # outTransform.AddTransform(transform)
     outTransform.AddTransform(inTransform)
 
     # Get output displacement field
@@ -1150,7 +1356,7 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     registration.SetOptimizerAsRegularStepGradientDescent(learningRate=epsilon, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
     if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda: print("{0}.\t {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
 
-    ### if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])
+    # if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])
 
     sigma = np.mean(np.array(refImg.GetSize())*np.array(refImg.GetSpacing())*0.02)
     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,sigma),
@@ -1186,8 +1392,8 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
         if(inMask): imgWrite(inMask, outDirPath+"0_initial/inMask.img")
         txtWriteList(compositeAffine, outDirPath+"0_initial/affine.txt")
 
-    ###methodList = [ndregTranslation, ndregScale, ndregAffine]
-    ###methodNameList = ["translation", "scale", "affine"]
+    # methodList = [ndregTranslation, ndregScale, ndregAffine]
+    # methodNameList = ["translation", "scale", "affine"]
 
     for (step, method) in enumerate(methodList):
         methodName = methodNameList[method]
@@ -1214,7 +1420,7 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
 
     return compositeAffine    
 
-#def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, iterations=1000, inAffine=None,verbose=False, inMask=None, refMask=None, outDirPath="", epsilon=0.1):
+# def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, iterations=1000, inAffine=None,verbose=False, inMask=None, refMask=None, outDirPath="", epsilon=0.1):
 #    if outDirPath != "": outDirPath = dirMake(outDirPath)
 #
 #    origInImg = inImg
@@ -1289,7 +1495,7 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
     command = binPath + " --in {0} --ref {1} --out {2} --alpha {3} --beta {4} --field {5} --invfield {6} --iterations {7} --scale {8} --steps {9} --verbose ".format(inPath, refPath, outPath, alpha, beta, fieldPath, invFieldPath, iterations, scale, steps)
     if(not useBias): command += " --mu 0"
     if(useMI):
-        #command += " --cost 1 --sigma 1e-5 --epsilon 1e-3" 
+        # command += " --cost 1 --sigma 1e-5 --epsilon 1e-3" 
         command += " --cost 1 --sigma 1e-4" 
         if not(epsilon is None):
             command += " --epsilon {0}".format(epsilon)
@@ -1315,7 +1521,7 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
         command = "/usr/bin/time -v " + command
         print(command)
 
-    #os.system(command)
+    # os.system(command)
     (returnValue, logText) = run(command, verbose=verbose)
 
     logPath = outDirPath+"log.txt"
@@ -1562,7 +1768,7 @@ def imgShowResultsRow(img, numRows=1, numCols=3, rowIndex=0, title=""):
         ax.set_yticklabels([])
         ax.set_xticklabels([])
         if i == 0: plt.ylabel(title, rotation=0, labelpad=30)
-        #plt.axis('off')
+        # plt.axis('off')
 """
 def imgGrid(size, spacing, step=[10,10,10],field=None):
     """
