@@ -646,7 +646,7 @@ def imgPad(img, padding=0, useNearest=False):
      If the padding < 0 then the filter crops the image
      """
      if isNumber(padding):
-         padding = [padding]*img.GetDimension()]]
+         padding = [padding]*img.GetDimension()
      elif len(padding) != img.GetDimension():
          raise Exception("padding must have length {0}.".format(img.GetDimension()))
 
