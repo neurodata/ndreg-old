@@ -182,18 +182,18 @@ def get_xyz_extents(rmt, ch_rsc, res=0, iso=True):
 
 def get_offset_boss(coord_frame, res=0, isotropic=False):
     return [
-            int(coord_frame.x_start / (2.**res)), 
-            int(coord_frame.y_start / (2.**res)),
-            int(coord_frame.z_start / (2.**res)) if isotropic else coord_frame.z_start]
+        int(coord_frame.x_start / (2.**res)), 
+        int(coord_frame.y_start / (2.**res)),
+        int(coord_frame.z_start / (2.**res)) if isotropic else coord_frame.z_start]
 
-    def get_image_size_boss(coord_frame, res=0, isotropic=False):
-        return [
-                int(coord_frame.x_stop / (2.**res)),
-                int(coord_frame.y_stop / (2.**res)),
-                int(coord_frame.z_stop / (2.**res)) if isotropic else coord_frame.z_stop]
+def get_image_size_boss(coord_frame, res=0, isotropic=False):
+    return [
+        int(coord_frame.x_stop / (2.**res)),
+        int(coord_frame.y_stop / (2.**res)),
+        int(coord_frame.z_stop / (2.**res)) if isotropic else coord_frame.z_stop]
 
-        def imgDownload_boss(remote, channel_resource, coordinate_frame_resource, resolution=0, size=[], start=[], isotropic=False):
-            """
+def imgDownload_boss(remote, channel_resource, coordinate_frame_resource, resolution=0, size=[], start=[], isotropic=False):
+    """
     Download image with given token from given server at given resolution.
     If channel isn't specified the first channel is downloaded.
     """
@@ -215,8 +215,7 @@ def get_offset_boss(coord_frame, res=0, isotropic=False):
 
     if size == []: size = get_image_size_boss(coordinate_frame_resource, resolution, isotropic)
     if start == []: start = get_offset_boss(coordinate_frame_resource, resolution, isotropic)
-    if isotropic:
-        x_range, y_range, z_range, spacing = get_xyz_extents(remote, channel_resource, res=resolution, iso=isotropic)
+    if isotropic: x_range, y_range, z_range, spacing = get_xyz_extents(remote, channel_resource, res=resolution, iso=isotropic)
 
     #size[2] = 200
     #dataType = metadata['channels'][channel]['datatype']
@@ -1186,9 +1185,6 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
         imgWrite(inImg, outDirPath+"0_initial/in.img")
         if(inMask): imgWrite(inMask, outDirPath+"0_initial/inMask.img")
         txtWriteList(compositeAffine, outDirPath+"0_initial/affine.txt")
-
-
-
 
     ###methodList = [ndregTranslation, ndregScale, ndregAffine]
     ###methodNameList = ["translation", "scale", "affine"]
