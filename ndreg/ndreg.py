@@ -273,9 +273,9 @@ def imgDownload_boss(
     if start == []:
         start = get_offset_boss(
             coordinate_frame_resource, resolution, isotropic)
-    if isotropic:
-        x_range, y_range, z_range, spacing = get_xyz_extents(
-            remote, channel_resource, res=resolution, iso=isotropic)
+#    if isotropic:
+#        x_range, y_range, z_range, spacing = get_xyz_extents(
+#            remote, channel_resource, res=resolution, iso=isotropic)
 
     # size[2] = 200
     # dataType = metadata['channels'][channel]['datatype']
