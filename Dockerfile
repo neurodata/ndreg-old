@@ -25,9 +25,7 @@ RUN apt-get -y install \
   libfftw3-dev
 
 RUN pip install --upgrade pip
-RUN pip install matplotlib SimpleITK
-RUN pip install numpy
-RUN pip install ndio
+RUN pip install matplotlib SimpleITK numpy ndio psutil
 
 # We currently following 'master' to incorperate many recent bug fixes.
 # When stable, use the following instead:
@@ -38,9 +36,7 @@ WORKDIR /work/intern
 RUN python setup.py install
 
 # Set up ipython
-RUN pip install ipython
-RUN pip install ipython[all]
-RUN pip install jupyter
+RUN pip install ipython[all] jupyter
 
 # Build ndreg. Cache based on last commit.
 WORKDIR /work
