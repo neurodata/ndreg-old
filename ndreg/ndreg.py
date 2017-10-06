@@ -830,7 +830,8 @@ def vtkReformat(inPath, outPath):
         outFile.write(line)
 
 
-def imgResample(img, spacing, size=[], useNearest=False, origin=[], outsideValue=0):
+def imgResample(img, spacing, size=[], useNearest=False,
+                origin=[], outsideValue=0):
     """
     Resamples image to given spacing and size.
     """
@@ -1298,8 +1299,8 @@ def affineRotate(theta, center=[], useDegrees=True):
 def affineApplyAffine(inAffine, affine):
     """ A_{outAffine} = A_{inAffine} \circ A_{affine} """
     if (not(isIterable(inAffine)) or not(isIterable(affine))
-        ):
-            raise Exception("inAffine and affine must be lists.")
+            ):
+        raise Exception("inAffine and affine must be lists.")
     numParameters = len(inAffine)
     n = 0.5 * (-1 + math.sqrt(1 + 4 * numParameters))  # dimension
     if not isInteger(n):
@@ -1447,7 +1448,7 @@ def imgChecker(inImg, refImg, useHM=True, pattern=[4] * dimension):
     return sitk.CheckerBoardImageFilter().Execute(inImg, refImg, pattern)
 
 
-#def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False,
+# def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False,
 #              numBins=32, iterations=1000, inMask=None, refMask=None, verbose=False, epsilon=0.1):
 #    """
 #    Perform Affine Registration between input image and reference image
@@ -1516,74 +1517,73 @@ def imgChecker(inImg, refImg, useHM=True, pattern=[4] * dimension):
 #        affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
 #    return affine
 def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False, numBins=32, iterations=1000, inMask=None, refMask=None, verbose=False, epsilon=0.1):
-        """
-            Perform Affine Registration between input image and reference image
-                """
-                    inDimension = inImg.GetDimension()
+    """
+    Perform Affine Registration between input image and reference image
+    """
+    inDimension = inImg.GetDimension()
 
-                        # Rescale images
-                            refSpacing = refImg.GetSpacing()
-                                spacing = [x / scale for x in refSpacing]
-                                    inImg = imgResample(inImg, spacing, useNearest=useNearest)
-                                        refImg = imgResample(refImg, spacing, useNearest=useNearest)
-                                            if(inMask): imgResample(inMask, spacing, useNearest=False)
-                                                if(refMask): imgResample(refMask, spacing, useNearest=False)
+    # Rescale images
+    refSpacing = refImg.GetSpacing()
+    spacing = [x / scale for x in refSpacing]
+    inImg = imgResample(inImg, spacing, useNearest=useNearest)
+    refImg = imgResample(refImg, spacing, useNearest=useNearest)
+    if(inMask): imgResample(inMask, spacing, useNearest=False)
+    if(refMask): imgResample(refMask, spacing, useNearest=False)
 
-                                                    # Set interpolator
-                                                        interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
-                                                            
-                                                                # Set transform
-                                                                    try:
-                                                                                rigidTransformList = [sitk.Similarity2DTransform(), sitk.Similarity3DTransform()]
-                                                                                        transform = [sitk.TranslationTransform(inDimension), sitk.ScaleTransform(inDimension), rigidTransformList[inDimension-2], sitk.AffineTransform(inDimension)][method]
-                                                                                                refCenter = refImg.TransformIndexToPhysicalPoint(np.array(refImg.GetSize())/2)
-                                                                                                        if method > ndregTranslation: transform.SetCenter(refCenter) # Use centered transform
-                                                                                                            except:
-                                                                                                                        raise Exception("method is invalid")
-                                                                                                                        
-                                                                                                                        # Do registration
-                                                                                                                            registration = sitk.ImageRegistrationMethod()
-                                                                                                                                registration.SetInterpolator(interpolator)
-                                                                                                                                    registration.SetInitialTransform(transform)
+    # Set interpolator
+    interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
+    
+    # Set transform
+    try:
+        rigidTransformList = [sitk.Similarity2DTransform(), sitk.Similarity3DTransform()]
+        transform = [sitk.TranslationTransform(inDimension), sitk.ScaleTransform(inDimension), rigidTransformList[inDimension-2], sitk.AffineTransform(inDimension)][method]
+        refCenter = refImg.TransformIndexToPhysicalPoint(np.array(refImg.GetSize())/2)
+        if method > ndregTranslation: transform.SetCenter(refCenter) # Use centered transform
+    except:
+        raise Exception("method is invalid")
+    
+    # Do registration
+    registration = sitk.ImageRegistrationMethod()
+    registration.SetInterpolator(interpolator)
+    registration.SetInitialTransform(transform)
 
-                                                                                                                                        if(inMask): registration.SetMetricMovingMask(inMask)
-                                                                                                                                            if(refMask): registration.SetMetricFixedMask(refMask)
-                                                                                                                                                
-                                                                                                                                                    if useMI:
-                                                                                                                                                                registration.SetMetricAsMattesMutualInformation(numBins)
-                                                                                                                                                                 
-                                                                                                                                                                     else:
-                                                                                                                                                                                 registration.SetMetricAsMeanSquares()
+    if(inMask): registration.SetMetricMovingMask(inMask)
+    if(refMask): registration.SetMetricFixedMask(refMask)
+    
+    if useMI:
+        registration.SetMetricAsMattesMutualInformation(numBins)
+ 
+    else:
+        registration.SetMetricAsMeanSquares()
 
-                                                                                                                                                                                     registration.SetOptimizerAsRegularStepGradientDescent(learningRate=epsilon, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
-                                                                                                                                                                                         if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda : print("{0}.\t {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
+    registration.SetOptimizerAsRegularStepGradientDescent(learningRate=epsilon, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
+    if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda : print("{0}.\t {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
 
-                                                                                                                                                                                             ### if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])    
-                                                                                                                                                                                                 sigma = np.mean(np.array(refImg.GetSize())*np.array(refImg.GetSpacing())*0.02)
-                                                                                                                                                                                                     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,sigma),
-                                                                                                                                                                                                                                      sitk.SmoothingRecursiveGaussian(inImg,sigma) )
+    ### if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])    
+    sigma = np.mean(np.array(refImg.GetSize())*np.array(refImg.GetSpacing())*0.02)
+    registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,sigma),
+                         sitk.SmoothingRecursiveGaussian(inImg,sigma) )
 
 
-                                                                                                                                                                                                         idAffine = list(sitk.AffineTransform(inDimension).GetParameters())    
+    idAffine = list(sitk.AffineTransform(inDimension).GetParameters())    
 
-                                                                                                                                                                                                             if method > ndregTranslation:
-                                                                                                                                                                                                                         try:
-                                                                                                                                                                                                                                         t = transform.GetTranslation() # Try to copy translation parameteers if available
-                                                                                                                                                                                                                                                 except:
-                                                                                                                                                                                                                                                                 t = [0]*inDimension
+    if method > ndregTranslation:
+        try:
+            t = transform.GetTranslation() # Try to copy translation parameteers if available
+        except:
+            t = [0]*inDimension
 
-                                                                                                                                                                                                                                                                         # Convert translation to offset
-                                                                                                                                                                                                                                                                                 A = np.mat(transform.GetMatrix()).reshape(inDimension, inDimension)
-                                                                                                                                                                                                                                                                                         c = np.mat(refCenter).transpose()
-                                                                                                                                                                                                                                                                                                 b = np.mat(t).transpose()
-                                                                                                                                                                                                                                                                                                         offset = b+c - A*c
+        # Convert translation to offset
+        A = np.mat(transform.GetMatrix()).reshape(inDimension, inDimension)
+        c = np.mat(refCenter).transpose()
+        b = np.mat(t).transpose()
+        offset = b+c - A*c
 
-                                                                                                                                                                                                                                                                                                                 affine = list(transform.GetMatrix()) + offset.flatten().tolist()[0]
-                                                                                                                                                                                                                                                                                                                     else:
-                                                                                                                                                                                                                                                                                                                                 affine = idAffine[0:inDimension**2] + list(transform.GetOffset())
+        affine = list(transform.GetMatrix()) + offset.flatten().tolist()[0]
+    else:
+        affine = idAffine[0:inDimension**2] + list(transform.GetOffset())
 
-                                                                                                                                                                                                                                                                                                                                     return affine
-
+    return affine
 
 def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, iterations=1000, epsilon=0.1, inAffine=None, methodList=[
                        ndregTranslation, ndregScale, ndregRigid, ndregAffine], verbose=False, inMask=None, refMask=None, outDirPath=""):
