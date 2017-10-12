@@ -1516,6 +1516,74 @@ def imgChecker(inImg, refImg, useHM=True, pattern=[4] * dimension):
 #    else:
 #        affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
 #    return affine
+# def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False, numBins=32, iterations=1000, inMask=None, refMask=None, verbose=False, epsilon=0.1):
+#     """
+#     Perform Affine Registration between input image and reference image
+#     """
+#     inDimension = inImg.GetDimension()
+
+#     # Rescale images
+#     refSpacing = refImg.GetSpacing()
+#     spacing = [x / scale for x in refSpacing]
+#     inImg = imgResample(inImg, spacing, useNearest=useNearest)
+#     refImg = imgResample(refImg, spacing, useNearest=useNearest)
+#     if(inMask): imgResample(inMask, spacing, useNearest=False)
+#     if(refMask): imgResample(refMask, spacing, useNearest=False)
+
+#     # Set interpolator
+#     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
+    
+#     # Set transform
+#     try:
+#         rigidTransformList = [sitk.Similarity2DTransform(), sitk.Similarity3DTransform()]
+#         transform = [sitk.TranslationTransform(inDimension), sitk.ScaleTransform(inDimension), rigidTransformList[inDimension-2], sitk.AffineTransform(inDimension)][method]
+#         refCenter = refImg.TransformIndexToPhysicalPoint(np.array(refImg.GetSize())/2)
+#         if method > ndregTranslation: transform.SetCenter(refCenter) # Use centered transform
+#     except:
+#         raise Exception("method is invalid")
+    
+#     # Do registration
+#     registration = sitk.ImageRegistrationMethod()
+#     registration.SetInterpolator(interpolator)
+#     registration.SetInitialTransform(transform)
+
+#     if(inMask): registration.SetMetricMovingMask(inMask)
+#     if(refMask): registration.SetMetricFixedMask(refMask)
+    
+#     if useMI:
+#         registration.SetMetricAsMattesMutualInformation(numBins)
+ 
+#     else:
+#         registration.SetMetricAsMeanSquares()
+
+#     registration.SetOptimizerAsRegularStepGradientDescent(learningRate=epsilon, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
+#     if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda : print("{0}.\t {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
+
+#     ### if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])    
+#     sigma = np.mean(np.array(refImg.GetSize())*np.array(refImg.GetSpacing())*0.02)
+#     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,sigma),
+#                          sitk.SmoothingRecursiveGaussian(inImg,sigma) )
+
+
+#     idAffine = list(sitk.AffineTransform(inDimension).GetParameters())    
+
+#     if method > ndregTranslation:
+#         try:
+#             t = transform.GetTranslation() # Try to copy translation parameteers if available
+#         except:
+#             t = [0]*inDimension
+
+#         # Convert translation to offset
+#         A = np.mat(transform.GetMatrix()).reshape(inDimension, inDimension)
+#         c = np.mat(refCenter).transpose()
+#         b = np.mat(t).transpose()
+#         offset = b+c - A*c
+
+#         affine = list(transform.GetMatrix()) + offset.flatten().tolist()[0]
+#     else:
+#         affine = idAffine[0:inDimension**2] + list(transform.GetOffset())
+
+#     return affine
 def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False, numBins=32, iterations=1000, inMask=None, refMask=None, verbose=False, epsilon=0.1):
     """
     Perform Affine Registration between input image and reference image
@@ -1529,16 +1597,17 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     refImg = imgResample(refImg, spacing, useNearest=useNearest)
     if(inMask): imgResample(inMask, spacing, useNearest=False)
     if(refMask): imgResample(refMask, spacing, useNearest=False)
-
+    
     # Set interpolator
     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
     
     # Set transform
+    refCenter = refImg.TransformIndexToPhysicalPoint(np.array(refImg.GetSize())/2)
+        
     try:
         rigidTransformList = [sitk.Similarity2DTransform(), sitk.Similarity3DTransform()]
         transform = [sitk.TranslationTransform(inDimension), sitk.ScaleTransform(inDimension), rigidTransformList[inDimension-2], sitk.AffineTransform(inDimension)][method]
-        refCenter = refImg.TransformIndexToPhysicalPoint(np.array(refImg.GetSize())/2)
-        if method > ndregTranslation: transform.SetCenter(refCenter) # Use centered transform
+        if method > ndregTranslation: transform.SetCenter(refCenter)
     except:
         raise Exception("method is invalid")
     
@@ -1559,7 +1628,17 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
     registration.SetOptimizerAsRegularStepGradientDescent(learningRate=epsilon, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
     if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda : print("{0}.\t {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
 
-    ### if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])    
+    numParameters = len(transform.GetParameters())
+    
+    optimizerScales = [1.0]*numParameters
+    translationScale = 3e-3
+    if method == ndregRigid:
+        optimizerScales[inDimension:2*inDimension] = [translationScale]*inDimension
+    elif method == ndregAffine: 
+        optimizerScales[inDimension**2:] = [translationScale]*inDimension
+    
+    registration.SetOptimizerScales(optimizerScales)
+
     sigma = np.mean(np.array(refImg.GetSize())*np.array(refImg.GetSpacing())*0.02)
     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,sigma),
                          sitk.SmoothingRecursiveGaussian(inImg,sigma) )
@@ -1569,21 +1648,43 @@ def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, us
 
     if method > ndregTranslation:
         try:
-            t = transform.GetTranslation() # Try to copy translation parameteers if available
+            t = transform.GetTranslation()
         except:
             t = [0]*inDimension
-
-        # Convert translation to offset
+        #affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
         A = np.mat(transform.GetMatrix()).reshape(inDimension, inDimension)
         c = np.mat(refCenter).transpose()
         b = np.mat(t).transpose()
         offset = b+c - A*c
-
         affine = list(transform.GetMatrix()) + offset.flatten().tolist()[0]
     else:
         affine = idAffine[0:inDimension**2] + list(transform.GetOffset())
-
+        
     return affine
+
+def imgBC(img, mask=None, scale=1.0, numBins=64):
+    """
+    Bias corrects an image using the N4 algorithm
+    """
+    spacing = np.array(img.GetSpacing())/0.2
+    img_ds = imgResample(img, spacing=spacing)
+
+    # Calculate bias
+    if mask is None:
+        mask_ds = sitk.Image(img_ds.GetSize(), sitk.sitkUInt8)+1
+        mask_ds.CopyInformation(img_ds)
+
+    img_ds_bc = sitk.N4BiasFieldCorrection(sitk.Cast(img_ds, sitk.sitkFloat32), mask_ds, numberOfHistogramBins=numBins)
+    bias_ds = img_ds_bc - sitk.Cast(img_ds,img_ds_bc.GetPixelID())
+    # Upsample bias    
+    bias = imgResample(bias_ds, spacing=img.GetSpacing(), size=img.GetSize())
+
+    # Apply bias to original image and threshold to eliminate negitive values
+    upper = np.iinfo(sitkToNpDataTypes[img.GetPixelID()]).max
+    img_bc = sitk.Threshold(img + sitk.Cast(bias, img.GetPixelID()),
+                            lower=0,
+                            upper=upper)
+    return img_bc
 
 def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, iterations=1000, epsilon=0.1, inAffine=None, methodList=[
                        ndregTranslation, ndregScale, ndregRigid, ndregAffine], verbose=False, inMask=None, refMask=None, outDirPath=""):
