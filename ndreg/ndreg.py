@@ -3,7 +3,6 @@
 from __future__ import print_function
 import numpy as np
 import SimpleITK as sitk
-import ndio.remote.neurodata as neurodata
 import os
 import math
 import sys
@@ -15,7 +14,6 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 from itertools import product
 from landmarks import *
-import ndio
 
 from intern.remote.boss import BossRemote
 from intern.resource.boss.resource import *
@@ -32,7 +30,6 @@ identityDirection = identityAffine[0:9]
 zeroOrigin = [0] * dimension
 zeroIndex = [0] * dimension
 
-ndServerDefault = "dev.neurodata.io"
 ndToSitkDataTypes = {'uint8': sitk.sitkUInt8,
                      'uint16': sitk.sitkUInt16,
                      'uint32': sitk.sitkUInt32,
@@ -347,78 +344,78 @@ def get_offset_boss(coord_frame, res=0, isotropic=False):
         raise(e)
 
 
-def imgDownload(
-        token,
-        channel="",
-        resolution=0,
-        server=ndServerDefault,
-        userToken="",
-        size=[],
-        start=[]):
-    """
-    Download image with given token from given server at given resolution.
-    If channel isn't specified the first channel is downloaded.
-    """
-    # TODO: Fix size and start parameters
-
-    # Create neurodata instance
-    if userToken != "":
-        nd = neurodata(
-            suppress_warnings=True,
-            hostname=server,
-            user_token=userToken)
-    else:
-        nd = neurodata(suppress_warnings=True, hostname=server)
-
-    # If channel isn't specified use first one
-    channelList = nd.get_channels(token).keys()
-    if len(channelList) == 0:
-        raise Exception("No channels defined for given token.")
-    elif channel == "":
-        channel = channelList[0]
-    elif not(channel in channelList):
-        raise Exception(
-            "Channel '{0}' does not exist for given token.".format(channel))
-
-    # Get image spacing, size, offset and data type from server
-    metadata = nd.get_proj_info(token)
-    spacingNm = metadata[u'dataset'][u'voxelres'][unicode(
-        str(resolution))]  # Returns spacing in nanometers
-    spacing = [x * 1e-6 for x in spacingNm]  # Convert spacing to mm
-
-    if size == []:
-        size = nd.get_image_size(token, resolution)
-    if start == []:
-        start = nd.get_image_offset(token, resolution)
-    dataType = metadata['channels'][channel]['datatype']
-
-    # Download all image data from specified channel
-    array = nd.get_cutout(
-        token,
-        channel,
-        start[0],
-        size[0],
-        start[1],
-        size[1],
-        start[2],
-        size[2],
-        resolution)
-
-    # Cast downloaded image to server's data type
-    # convert numpy array to sitk image
-    img = sitk.Cast(sitk.GetImageFromArray(array), ndToSitkDataTypes[dataType])
-
-    # Reverse axes order
-    img = sitk.PermuteAxesImageFilter().Execute(img, range(dimension - 1, -1, -1))
-    img.SetDirection(identityDirection)
-    img.SetSpacing(spacing)
-
-    # Convert to 2D if only one slice
-    img = imgCollaspeDimension(img)
-
-    return img
-
-
+#def imgDownload(
+#        token,
+#        channel="",
+#        resolution=0,
+#        server=ndServerDefault,
+#        userToken="",
+#        size=[],
+#        start=[]):
+#    """
+#    Download image with given token from given server at given resolution.
+#    If channel isn't specified the first channel is downloaded.
+#    """
+#    # TODO: Fix size and start parameters
+#
+#    # Create neurodata instance
+#    if userToken != "":
+#        nd = neurodata(
+#            suppress_warnings=True,
+#            hostname=server,
+#            user_token=userToken)
+#    else:
+#        nd = neurodata(suppress_warnings=True, hostname=server)
+#
+#    # If channel isn't specified use first one
+#    channelList = nd.get_channels(token).keys()
+#    if len(channelList) == 0:
+#        raise Exception("No channels defined for given token.")
+#    elif channel == "":
+#        channel = channelList[0]
+#    elif not(channel in channelList):
+#        raise Exception(
+#            "Channel '{0}' does not exist for given token.".format(channel))
+#
+#    # Get image spacing, size, offset and data type from server
+#    metadata = nd.get_proj_info(token)
+#    spacingNm = metadata[u'dataset'][u'voxelres'][unicode(
+#        str(resolution))]  # Returns spacing in nanometers
+#    spacing = [x * 1e-6 for x in spacingNm]  # Convert spacing to mm
+#
+#    if size == []:
+#        size = nd.get_image_size(token, resolution)
+#    if start == []:
+#        start = nd.get_image_offset(token, resolution)
+#    dataType = metadata['channels'][channel]['datatype']
+#
+#    # Download all image data from specified channel
+#    array = nd.get_cutout(
+#        token,
+#        channel,
+#        start[0],
+#        size[0],
+#        start[1],
+#        size[1],
+#        start[2],
+#        size[2],
+#        resolution)
+#
+#    # Cast downloaded image to server's data type
+#    # convert numpy array to sitk image
+#    img = sitk.Cast(sitk.GetImageFromArray(array), ndToSitkDataTypes[dataType])
+#
+#    # Reverse axes order
+#    img = sitk.PermuteAxesImageFilter().Execute(img, range(dimension - 1, -1, -1))
+#    img.SetDirection(identityDirection)
+#    img.SetSpacing(spacing)
+#
+#    # Convert to 2D if only one slice
+#    img = imgCollaspeDimension(img)
+#
+#    return img
+#
+#
 def imgCopy(img):
     """
     Returns a copy of the input image
@@ -426,372 +423,372 @@ def imgCopy(img):
     return sitk.Image(img)
 
 
-def limsGetMetadata(token):
-    nd = neurodata()
-    r = requests.get(nd.meta_url("metadata/ocp/get/" + token))
-    return r.json()
-
-
-def projGetMetadata(token):
-    nd = neurodata()
-    return nd.get_proj_info(token)
-
-
-def limsSetMetadata(token, metadata):
-    nd = neurodata()
-    nd.set_metadata(token, metadata)
-
-
-def imgPreprocess(
-        inToken,
-        refToken="",
-        inChannel="",
-        inResolution=0,
-        refResolution=0,
-        outDirPath="",
-        doSteps=[
-            1,
-            1,
-            1],
-        verbose=True):
-    """
-    Downloads, resamples and reorients input image to the spacing and orientation of the reference image.
-    This function assumes that the input token (and reference token if used) has a corresponding LIMS token.
-    The LIMS metadata should contain \"spacing\" and \"orientation\" fields.
-    The \"spacing\" field should specify the x, y and z spacing of the image in millimeters and e.g. spacing=[0.025, 0.025, 0.025]
-    The \"orientation\" field should be orientation strings specifying the x, y, z orientation of the image e.g. orientation="las"
-    See documentation of the \"imgReorient\" function for more details on orientation strings.
-    """
-    if outDirPath != "":
-        outDirPath = dirMake(outDirPath)
-    inMask = None
-
-    # Create NeuroData instance
-    nd = neurodata()
-
-    # Set reference default spacing and orientation
-    refSpacing = [0.025, 0.025, 0.025]
-    refOrient = "rsa"  # Coronal sliced images
-
-    if refToken != "":
-        # Get project metadata for reference token
-        try:
-            refProjMetadata = nd.get_proj_info(refToken)
-        except BaseException:
-            raise Exception(
-                "Reference project token {0} was not found on server {1}".format(
-                    refToken, nd.hostname))
-
-        # Get lims metadata (spacing and orientation) of reference token
-        refLimsMetadata = limsGetMetadata(refToken)
-
-        if "spacing" in refLimsMetadata:
-            refSpacing = refLimsMetadata["spacing"]
-
-            # Scale reference spacing values of input image based on resolution
-            # level
-            for i in range(0, dimension - 1):
-                refSpacing[i] *= 2**refResolution
-            if refProjMetadata['dataset']['scaling'] != 'zslices':
-                refSpacing[dimension - 1] *= 2**refResolution
-            else:
-                if verbose:
-                    print("Warning: Reference LIMS token {0} does not have an \"spacing\" feild. Using value of {1} from project token {0}".format(
-                        refToken, refSpacing))
-
-        if "orientation" in refLimsMetadata:
-            refOrient = refLimsMetadata["orientation"]
-        else:
-            if verbose:
-                print("Warning: Reference LIMS token {0} does not have an \"orientation\" feild. Usign default value of ".format(
-                    refToken, refOrient))
-
-    # Get project metadata for input token
-    try:
-        inProjMetadata = nd.get_proj_info(inToken)
-    except BaseException:
-        raise Exception(
-            "Token {0} was not found on server {1}".format(
-                inToken, nd.hostname))
-
-    # Get lims metadata for input token
-    inLimsMetadata = limsGetMetadata(inToken)
-
-    # Download input image
-    if doSteps[0]:
-        if verbose:
-            print("Downloading input image")
-        inImg = imgDownload(
-            inToken,
-            channel=inChannel,
-            resolution=inResolution)
-
-        # Check if downloaded image is empty
-        epsilon = sys.float_info.epsilon
-        stats = sitk.StatisticsImageFilter()
-        stats.Execute(inImg)
-
-        if (stats.GetMean() < epsilon) and (stats.GetVariance() < epsilon):
-            raise Exception(
-                "Error: Input image downoaded from token {0} is empty".format(inToken))
-
-        inSpacing = inImg.GetSpacing()
-
-        # Set input image's spacing based on lims metadata
-        if 'spacing' in inLimsMetadata.keys():
-            # If lims metadata contains a spacing field then set spacing of
-            # downloaded image using it
-            inSpacing = inLimsMetadata['spacing']
-
-            # Scale spacing values of input image based on resolution level
-            for i in range(0, dimension - 1):
-                inSpacing[i] *= 2**inResolution
-            if inProjMetadata['dataset']['scaling'] != 'zslices':
-                inSpacing[dimension - 1] *= 2**inResolution
-            inImg.SetSpacing(inSpacing)
-        else:
-            if verbose:
-                print(
-                    "Warning: LIMS token {0} does not have an \"spacing\" feild.  Using value of {1} from project token {0}".format(inToken, inSpacing))
-
-        if outDirPath != "":
-            imgWrite(inImg, outDirPath + "/0_download/in.img")
-
-    # Resample input image to spacing of reference image
-    if doSteps[1]:
-        if verbose:
-            print("Resampling input image")
-        if outDirPath != "":
-            inImg = imgRead(outDirPath + "/0_download/in.img")
-        inImg = imgResample(inImg, refSpacing)
-        if outDirPath != "":
-            imgWrite(inImg, outDirPath + "/1_resample/in.img")
-
-    # Reorient input image to orientation of reference image
-    if doSteps[2]:
-        if outDirPath != "":
-            inImg = imgRead(outDirPath + "/1_resample/in.img")
-        if "orientation" in inLimsMetadata.keys():
-            if verbose:
-                print("Reorienting input image")
-            # If lims metadata contains a orientation field then reorient image
-            inOrient = inLimsMetadata["orientation"]
-            inImg = imgReorient(inImg, inOrient, refOrient)
-
-            """
-            # If there's there's affine info for the reference orientation then
-            # apply it
-            if refOrient+"Affine" in inLimsMetadata.keys():
-                affine = inLimsMetadata[refOrient+"Affine"]
-                inImg = imgApplyAffine(inImg, affine, size=inImg.GetSize())
-            """
-        else:
-            if verbose:
-                print(
-                    "Warning: LIMS token {0} does not have an \"orientation\" feild. Could not reorient image.".format(inToken))
-
-        if outDirPath != "":
-            imgWrite(inImg, outDirPath + "/2_reorient/in.img")
-
-    if outDirPath != "":
-        imgWrite(inImg, outDirPath + "/in.img")
-
-    return inImg
-
-
-def imgPostprocess(
-        inImg,
-        refToken,
-        outToken,
-        outChannel="",
-        useNearest=False,
-        doSteps=[
-            1,
-            1],
-    verbose=False,
-        outDirPath=""):
-    if outDirPath != "":
-        outDirPath = dirMake(outDirPath)
-
-    refLimsMetadata = limsGetMetadata(refToken)
-    refOrient = refLimsMetadata["orientation"]
-
-    outProjMetadata = projGetMetadata(outToken)
-    inToken = outProjMetadata["dataset"]["name"]
-    inLimsMetadata = limsGetMetadata(inToken)
-    inOrient = inLimsMetadata["orientation"]
-
-    if doSteps[0]:
-        if verbose:
-            print("Reorienting image")
-        """
-        if refOrient+"Affine" in inLimsMetadata.keys():
-            invAffine = affineInverse(inLimsMetadata[refOrient+"Affine"])
-            inImg = imgApplyAffine(
-    inImg,
-    invAffine,
-    useNearest=useNearest,
-     size=inImg.GetSize())
-        """
-        inImg = imgReorient(inImg, refOrient, inOrient)
-        if outDirPath != "":
-            imgWrite(inImg, outDirPath + "0_reorient/in.img")
-
-    if doSteps[1]:
-        nd = neurodata()
-        outResolution = 5
-        outSpacing = inLimsMetadata["spacing"]
-        outSize = list(
-            np.array(
-                nd.get_image_size(
-                    outToken,
-                    outResolution)) -
-            np.array(
-                nd.get_image_offset(
-                    outToken,
-                    outResolution)))
-
-        for i in range(dimension - 1):
-            outSpacing[i] *= 2**outResolution
-        if outProjMetadata["dataset"]["scaling"] != "zslices":
-            outSpacing[dimension - 1] *= 2**outResolution
-
-        inImg = imgResample(
-            inImg,
-            spacing=outSpacing,
-            size=outSize,
-            useNearest=useNearest)
-        if outDirPath != "":
-            imgWrite(inImg, outDirPath + "1_resample/in.img")
-
-        if verbose:
-            print("Uploading results")
-        imgUpload(
-            inImg,
-            outToken,
-            channel=outChannel,
-            resolution=outResolution)
-
-
-def imgUpload(
-        img,
-        token,
-        channel="",
-        resolution=0,
-        start=[
-            0,
-            0,
-            0],
-    server=ndServerDefault,
-    userToken="",
-        propagate=False):
-    """
-    Upload image with given token from given server at given resolution.
-    If channel isn't specified image is uploaded to default channel
-    """
-    # Create neurodata instance
-
-    if userToken != "":
-        nd = neurodata(
-            suppress_warnings=True,
-            hostname=server,
-            user_token=userToken)
-    else:
-        nd = neurodata(suppress_warnings=True, hostname=server)
-
-    # If channel isn't specified use first one
-    channelList = nd.get_channels(token).keys()
-    if len(channelList) == 0:
-        raise Exception("No channels defined for token {0}.".format(token))
-    elif channel == "":
-        channel = channelList[0]
-    elif not(channel in channelList):
-        raise Exception(
-            "Channel '{0}' does not exist for given token.".format(channel))
-
-    # Make input image 3D
-    if(img.GetDimension() == 2):
-        img = sitk.JoinSeriesImageFilter().Execute(img)
-
-    # Convert with RGB or RGBA multi-component images to uint32
-    numComponents = img.GetNumberOfComponentsPerPixel()
-    if numComponents in [3, 4]:
-        for component in range(numComponents):
-            #  Extract component
-            caster = sitk.VectorIndexSelectionCastImageFilter()
-            caster.SetIndex(component)
-            componentImg = caster.Execute(img)
-
-            # Scale intensity to 8-bit range
-            componentDatatype = sitkToNpDataTypes[componentImg.GetPixelID()]
-
-            componentMin = np.iinfo(componentDatatype).min
-            componentMax = np.iinfo(componentDatatype).max
-            componentImg = sitk.IntensityWindowingImageFilter().Execute(
-                componentImg, componentMin, componentMax, 0, 255)
-            componentImg = sitk.Cast(componentImg, sitk.sitkUInt32)
-
-            # Create RGBA image with red component in lowest order byte
-            # followed by green and blue (and alpha)
-            if component == 0:
-                uint32Img = componentImg * 256**component
-            else:
-                uint32Img += componentImg * 256**component
-
-        # Fill alpha byte if no alpha component was given
-        if numComponents == 3:
-            uint32Img += 255 * 256**3
-        img = uint32Img
-
-    elif numComponents == 2 or numComponents > 4:
-        raise Exception("Error: Expected scaler, RGB or RGBA image")
-
-    # Get image size from server
-    offset = nd.get_image_offset(token, resolution)
-
-    serverSize = list(
-        np.array(
-            nd.get_image_size(
-                token,
-                resolution)) -
-        np.array(offset))
-    imgSize = img.GetSize()
-
-    # Raise exception if input image is too big
-    for i in range(img.GetDimension()):
-        if imgSize[i] > serverSize[i]:
-            raise Exception(
-                "Input image with size {0} excedes bounds of token {1} with size {2}".format(imgSize, token, datasetSize))
-
-    # Get image data type from server
-    metadata = nd.get_proj_info(token)
-    dataType = metadata['channels'][channel]['datatype']
-
-    # Cast input image to server's data type
-    castImg = sitk.Cast(img, ndToSitkDataTypes[dataType])
-
-    # Reverse axis order
-    array = sitk.GetArrayFromImage(castImg).transpose(
-        range(img.GetDimension() - 1, -1, -1))
-
-    # Upload all image data from specified channel
-    nd.post_cutout(
-        token,
-        channel,
-        offset[0] +
-        start[0],
-        offset[1] +
-        start[1],
-        offset[2] +
-        start[2],
-        data=array,
-        resolution=resolution)
-
-    # Propagate
-    if propagate:
-        nd.propagate(token, channel)
-
-
+#def limsGetMetadata(token):
+#    nd = neurodata()
+#    r = requests.get(nd.meta_url("metadata/ocp/get/" + token))
+#    return r.json()
+##
+#
+#def projGetMetadata(token):
+#    nd = neurodata()
+#    return nd.get_proj_info(token)
+#
+#
+#def limsSetMetadata(token, metadata):
+#    nd = neurodata()
+#    nd.set_metadata(token, metadata)
+#
+#
+#def imgPreprocess(
+#        inToken,
+#        refToken="",
+#        inChannel="",
+#        inResolution=0,
+#        refResolution=0,
+#        outDirPath="",
+#        doSteps=[
+#            1,
+#            1,
+#            1],
+#        verbose=True):
+#    """
+#    Downloads, resamples and reorients input image to the spacing and orientation of the reference image.
+#    This function assumes that the input token (and reference token if used) has a corresponding LIMS token.
+#    The LIMS metadata should contain \"spacing\" and \"orientation\" fields.
+#    The \"spacing\" field should specify the x, y and z spacing of the image in millimeters and e.g. spacing=[0.025, 0.025, 0.025]
+#    The \"orientation\" field should be orientation strings specifying the x, y, z orientation of the image e.g. orientation="las"
+#    See documentation of the \"imgReorient\" function for more details on orientation strings.
+#    """
+#    if outDirPath != "":
+#        outDirPath = dirMake(outDirPath)
+#    inMask = None
+#
+#    # Create NeuroData instance
+#    nd = neurodata()
+#
+#    # Set reference default spacing and orientation
+#    refSpacing = [0.025, 0.025, 0.025]
+#    refOrient = "rsa"  # Coronal sliced images
+#
+#    if refToken != "":
+#        # Get project metadata for reference token
+#        try:
+#            refProjMetadata = nd.get_proj_info(refToken)
+#        except BaseException:
+#            raise Exception(
+#                "Reference project token {0} was not found on server {1}".format(
+#                    refToken, nd.hostname))
+#
+#        # Get lims metadata (spacing and orientation) of reference token
+#        refLimsMetadata = limsGetMetadata(refToken)
+#
+#        if "spacing" in refLimsMetadata:
+#            refSpacing = refLimsMetadata["spacing"]
+#
+#            # Scale reference spacing values of input image based on resolution
+#            # level
+#            for i in range(0, dimension - 1):
+#                refSpacing[i] *= 2**refResolution
+#            if refProjMetadata['dataset']['scaling'] != 'zslices':
+#                refSpacing[dimension - 1] *= 2**refResolution
+#            else:
+#                if verbose:
+#                    print("Warning: Reference LIMS token {0} does not have an \"spacing\" feild. Using value of {1} from project token {0}".format(
+#                        refToken, refSpacing))
+#
+#        if "orientation" in refLimsMetadata:
+#            refOrient = refLimsMetadata["orientation"]
+#        else:
+#            if verbose:
+#                print("Warning: Reference LIMS token {0} does not have an \"orientation\" feild. Usign default value of ".format(
+#                    refToken, refOrient))
+#
+#    # Get project metadata for input token
+#    try:
+#        inProjMetadata = nd.get_proj_info(inToken)
+#    except BaseException:
+#        raise Exception(
+#            "Token {0} was not found on server {1}".format(
+#                inToken, nd.hostname))
+#
+#    # Get lims metadata for input token
+#    inLimsMetadata = limsGetMetadata(inToken)
+#
+#    # Download input image
+#    if doSteps[0]:
+#        if verbose:
+#            print("Downloading input image")
+#        inImg = imgDownload(
+#            inToken,
+#            channel=inChannel,
+#            resolution=inResolution)
+#
+#        # Check if downloaded image is empty
+#        epsilon = sys.float_info.epsilon
+#        stats = sitk.StatisticsImageFilter()
+#        stats.Execute(inImg)
+#
+#        if (stats.GetMean() < epsilon) and (stats.GetVariance() < epsilon):
+#            raise Exception(
+#                "Error: Input image downoaded from token {0} is empty".format(inToken))
+#
+#        inSpacing = inImg.GetSpacing()
+#
+#        # Set input image's spacing based on lims metadata
+#        if 'spacing' in inLimsMetadata.keys():
+#            # If lims metadata contains a spacing field then set spacing of
+#            # downloaded image using it
+#            inSpacing = inLimsMetadata['spacing']
+#
+#            # Scale spacing values of input image based on resolution level
+#            for i in range(0, dimension - 1):
+#                inSpacing[i] *= 2**inResolution
+#            if inProjMetadata['dataset']['scaling'] != 'zslices':
+#                inSpacing[dimension - 1] *= 2**inResolution
+#            inImg.SetSpacing(inSpacing)
+#        else:
+#            if verbose:
+#                print(
+#                    "Warning: LIMS token {0} does not have an \"spacing\" feild.  Using value of {1} from project token {0}".format(inToken, inSpacing))
+#
+#        if outDirPath != "":
+#            imgWrite(inImg, outDirPath + "/0_download/in.img")
+#
+#    # Resample input image to spacing of reference image
+#    if doSteps[1]:
+#        if verbose:
+#            print("Resampling input image")
+#        if outDirPath != "":
+#            inImg = imgRead(outDirPath + "/0_download/in.img")
+#        inImg = imgResample(inImg, refSpacing)
+#        if outDirPath != "":
+#            imgWrite(inImg, outDirPath + "/1_resample/in.img")
+#
+#    # Reorient input image to orientation of reference image
+#    if doSteps[2]:
+#        if outDirPath != "":
+#            inImg = imgRead(outDirPath + "/1_resample/in.img")
+#        if "orientation" in inLimsMetadata.keys():
+#            if verbose:
+#                print("Reorienting input image")
+#            # If lims metadata contains a orientation field then reorient image
+#            inOrient = inLimsMetadata["orientation"]
+#            inImg = imgReorient(inImg, inOrient, refOrient)
+#
+#            """
+#            # If there's there's affine info for the reference orientation then
+#            # apply it
+#            if refOrient+"Affine" in inLimsMetadata.keys():
+#                affine = inLimsMetadata[refOrient+"Affine"]
+#                inImg = imgApplyAffine(inImg, affine, size=inImg.GetSize())
+#            """
+#        else:
+#            if verbose:
+#                print(
+#                    "Warning: LIMS token {0} does not have an \"orientation\" feild. Could not reorient image.".format(inToken))
+#
+#        if outDirPath != "":
+#            imgWrite(inImg, outDirPath + "/2_reorient/in.img")
+#
+#    if outDirPath != "":
+#        imgWrite(inImg, outDirPath + "/in.img")
+#
+#    return inImg
+#
+#
+#def imgPostprocess(
+#        inImg,
+#        refToken,
+#        outToken,
+#        outChannel="",
+#        useNearest=False,
+#        doSteps=[
+#            1,
+#            1],
+#    verbose=False,
+#        outDirPath=""):
+#    if outDirPath != "":
+#        outDirPath = dirMake(outDirPath)
+#
+#    refLimsMetadata = limsGetMetadata(refToken)
+#    refOrient = refLimsMetadata["orientation"]
+#
+#    outProjMetadata = projGetMetadata(outToken)
+#    inToken = outProjMetadata["dataset"]["name"]
+#    inLimsMetadata = limsGetMetadata(inToken)
+#    inOrient = inLimsMetadata["orientation"]
+#
+#    if doSteps[0]:
+#        if verbose:
+#            print("Reorienting image")
+#        """
+#        if refOrient+"Affine" in inLimsMetadata.keys():
+#            invAffine = affineInverse(inLimsMetadata[refOrient+"Affine"])
+#            inImg = imgApplyAffine(
+#    inImg,
+#    invAffine,
+#    useNearest=useNearest,
+#     size=inImg.GetSize())
+#        """
+#        inImg = imgReorient(inImg, refOrient, inOrient)
+#        if outDirPath != "":
+#            imgWrite(inImg, outDirPath + "0_reorient/in.img")
+#
+#    if doSteps[1]:
+#        nd = neurodata()
+#        outResolution = 5
+#        outSpacing = inLimsMetadata["spacing"]
+#        outSize = list(
+#            np.array(
+#                nd.get_image_size(
+#                    outToken,
+#                    outResolution)) -
+#            np.array(
+#                nd.get_image_offset(
+#                    outToken,
+#                    outResolution)))
+#
+#        for i in range(dimension - 1):
+#            outSpacing[i] *= 2**outResolution
+#        if outProjMetadata["dataset"]["scaling"] != "zslices":
+#            outSpacing[dimension - 1] *= 2**outResolution
+#
+#        inImg = imgResample(
+#            inImg,
+#            spacing=outSpacing,
+#            size=outSize,
+#            useNearest=useNearest)
+#        if outDirPath != "":
+#            imgWrite(inImg, outDirPath + "1_resample/in.img")
+#
+#        if verbose:
+#            print("Uploading results")
+#        imgUpload(
+#            inImg,
+#            outToken,
+#            channel=outChannel,
+#            resolution=outResolution)
+#
+#
+#def imgUpload(
+#        img,
+#        token,
+#        channel="",
+#        resolution=0,
+#        start=[
+#            0,
+#            0,
+#            0],
+#    server=ndServerDefault,
+#    userToken="",
+#        propagate=False):
+#    """
+#    Upload image with given token from given server at given resolution.
+#    If channel isn't specified image is uploaded to default channel
+#    """
+#    # Create neurodata instance
+#
+#    if userToken != "":
+#        nd = neurodata(
+#            suppress_warnings=True,
+#            hostname=server,
+#            user_token=userToken)
+#    else:
+#        nd = neurodata(suppress_warnings=True, hostname=server)
+#
+#    # If channel isn't specified use first one
+#    channelList = nd.get_channels(token).keys()
+#    if len(channelList) == 0:
+#        raise Exception("No channels defined for token {0}.".format(token))
+#    elif channel == "":
+#        channel = channelList[0]
+#    elif not(channel in channelList):
+#        raise Exception(
+#            "Channel '{0}' does not exist for given token.".format(channel))
+#
+#    # Make input image 3D
+#    if(img.GetDimension() == 2):
+#        img = sitk.JoinSeriesImageFilter().Execute(img)
+#
+#    # Convert with RGB or RGBA multi-component images to uint32
+#    numComponents = img.GetNumberOfComponentsPerPixel()
+#    if numComponents in [3, 4]:
+#        for component in range(numComponents):
+#            #  Extract component
+#            caster = sitk.VectorIndexSelectionCastImageFilter()
+#            caster.SetIndex(component)
+#            componentImg = caster.Execute(img)
+#
+#            # Scale intensity to 8-bit range
+#            componentDatatype = sitkToNpDataTypes[componentImg.GetPixelID()]
+#
+#            componentMin = np.iinfo(componentDatatype).min
+#            componentMax = np.iinfo(componentDatatype).max
+#            componentImg = sitk.IntensityWindowingImageFilter().Execute(
+#                componentImg, componentMin, componentMax, 0, 255)
+#            componentImg = sitk.Cast(componentImg, sitk.sitkUInt32)
+#
+#            # Create RGBA image with red component in lowest order byte
+#            # followed by green and blue (and alpha)
+#            if component == 0:
+#                uint32Img = componentImg * 256**component
+#            else:
+#                uint32Img += componentImg * 256**component
+#
+#        # Fill alpha byte if no alpha component was given
+#        if numComponents == 3:
+#            uint32Img += 255 * 256**3
+#        img = uint32Img
+#
+#    elif numComponents == 2 or numComponents > 4:
+#        raise Exception("Error: Expected scaler, RGB or RGBA image")
+#
+#    # Get image size from server
+#    offset = nd.get_image_offset(token, resolution)
+#
+#    serverSize = list(
+#        np.array(
+#            nd.get_image_size(
+#                token,
+#                resolution)) -
+#        np.array(offset))
+#    imgSize = img.GetSize()
+#
+#    # Raise exception if input image is too big
+#    for i in range(img.GetDimension()):
+#        if imgSize[i] > serverSize[i]:
+#            raise Exception(
+#                "Input image with size {0} excedes bounds of token {1} with size {2}".format(imgSize, token, datasetSize))
+#
+#    # Get image data type from server
+#    metadata = nd.get_proj_info(token)
+#    dataType = metadata['channels'][channel]['datatype']
+#
+#    # Cast input image to server's data type
+#    castImg = sitk.Cast(img, ndToSitkDataTypes[dataType])
+#
+#    # Reverse axis order
+#    array = sitk.GetArrayFromImage(castImg).transpose(
+#        range(img.GetDimension() - 1, -1, -1))
+#
+#    # Upload all image data from specified channel
+#    nd.post_cutout(
+#        token,
+#        channel,
+#        offset[0] +
+#        start[0],
+#        offset[1] +
+#        start[1],
+#        offset[2] +
+#        start[2],
+#        data=array,
+#        resolution=resolution)
+#
+#    # Propagate
+#    if propagate:
+#        nd.propagate(token, channel)
+#
+#
 def imgWrite(img, path):
     """
     Write sitk image to path.
@@ -1671,10 +1668,10 @@ def imgBC(img, mask=None, scale=1.0, numBins=64):
 
     # Calculate bias
     if mask is None:
-        mask_ds = sitk.Image(img_ds.GetSize(), sitk.sitkUInt8)+1
-        mask_ds.CopyInformation(img_ds)
+        mask = sitk.Image(img_ds.GetSize(), sitk.sitkUInt8)+1
+        mask.CopyInformation(img_ds)
 
-    img_ds_bc = sitk.N4BiasFieldCorrection(sitk.Cast(img_ds, sitk.sitkFloat32), mask_ds, numberOfHistogramBins=numBins)
+    img_ds_bc = sitk.N4BiasFieldCorrection(sitk.Cast(img_ds, sitk.sitkFloat32), mask, numberOfHistogramBins=numBins)
     bias_ds = img_ds_bc - sitk.Cast(img_ds,img_ds_bc.GetPixelID())
     # Upsample bias    
     bias = imgResample(bias_ds, spacing=img.GetSpacing(), size=img.GetSize())
@@ -2450,82 +2447,82 @@ def lmkApplyField(inLmk, field, spacing=[1, 1, 1]):
     return landmarks(outLmkList, inLmk.spacing)
 
 
-def vizUrl(tokenList, channelList=[], serverList=[],
-           userTokenList=[], use4Panel=True):
-    if isinstance(tokenList, basestring):
-        tokenList = [tokenList]
-    numTokens = len(tokenList)
-
-    if isinstance(channelList, basestring):
-        channelList = [channelList]
-    if len(channelList) == 0:
-        channelList = [""] * numTokens
-    if len(channelList) != numTokens:
-        raise Exception("len(channelList) != len(tokenList)")
-
-    if isinstance(serverList, basestring):
-        serverList = [serverList] * numTokens
-    if len(serverList) == 0:
-        serverList = [ndServerDefault] * numTokens
-    if len(serverList) != numTokens:
-        raise Exception("len(serverList) != len(tokenList)")
-
-    if isinstance(userTokenList, basestring):
-        userTokenList = [userTokenList] * numTokens
-    if len(userTokenList) == 0:
-        userTokenList = [""] * numTokens
-    if len(userTokenList) != numTokens:
-        raise Exception("len(userTokenList) != len(tokenList)")
-
-    layerDict = {}
-    for i in range(0, numTokens):
-        if userTokenList[i] != "":
-            nd = neurodata(
-                suppress_warnings=True,
-                hostname=serverList[i],
-                user_token=userTokenList[i])
-        else:
-            nd = neurodata(suppress_warnings=True, hostname=serverList[i])
-
-        # Check if project token has given channel
-        ndstoreChannelList = nd.get_channels(tokenList[i]).keys()
-        if len(ndstoreChannelList) == 0:
-            raise Exception(
-                'Project token "{0}" does not have any channels.'.format(
-                    tokenList[i], channelList[i]))
-        elif channelList[i] == "":
-            # Use first channel if no channel was provided for this token.
-            channelList[i] = ndstoreChannelList[0]
-        elif not(channelList[i] in ndstoreChannelList):
-            raise Exception(
-                'Project token "{0}" does not have a channel named "{1}".'.format(
-                    tokenList[i], channelList[i]))
-
-        # Get channel type, either "image" or "annotation" from ndstore
-        channelType = nd.get_proj_info(tokenList[i])[
-            'channels'][channelList[i]]['channel_type'].encode('ascii', 'ignore')
-
-        # ndviz uses name "segmentation" insted of "annotation" to dentote
-        # annotation channels
-        if channelType == "annotation":
-            channelType = "segmentation"
-        if channelType == "timeseries":
-            channelType = "image"
-
-        channelDict = {
-            'type': channelType,
-            'source': 'ndstore://https://{server}/{token}/{channel}?neariso=false'.format(
-                token=tokenList[i],
-                channel=channelList[i],
-                server=serverList[i])}
-        layerDict["{0}?neariso=false".format(channelList[i])] = channelDict
-
-    ndvizDict = {}
-    ndvizDict['layers'] = layerDict
-    if use4Panel:
-        ndvizDict['layout'] = '4panel'
-    ndvizString = str(ndvizDict).replace(" ", "").replace(",", "_")
-    ndvizBaseUrl = "https://mri.neurodata.io/ndviz/#!"
-    ndvizUrl = ndvizBaseUrl + ndvizString
-
-    return ndvizUrl
+#def vizUrl(tokenList, channelList=[], serverList=[],
+#           userTokenList=[], use4Panel=True):
+#    if isinstance(tokenList, basestring):
+#        tokenList = [tokenList]
+#    numTokens = len(tokenList)
+#
+#    if isinstance(channelList, basestring):
+#        channelList = [channelList]
+#    if len(channelList) == 0:
+#        channelList = [""] * numTokens
+#    if len(channelList) != numTokens:
+#        raise Exception("len(channelList) != len(tokenList)")
+#
+#    if isinstance(serverList, basestring):
+#        serverList = [serverList] * numTokens
+#    if len(serverList) == 0:
+#        serverList = [ndServerDefault] * numTokens
+#    if len(serverList) != numTokens:
+#        raise Exception("len(serverList) != len(tokenList)")
+#
+#    if isinstance(userTokenList, basestring):
+#        userTokenList = [userTokenList] * numTokens
+#    if len(userTokenList) == 0:
+#        userTokenList = [""] * numTokens
+#    if len(userTokenList) != numTokens:
+#        raise Exception("len(userTokenList) != len(tokenList)")
+#
+#    layerDict = {}
+#    for i in range(0, numTokens):
+#        if userTokenList[i] != "":
+#            nd = neurodata(
+#                suppress_warnings=True,
+#                hostname=serverList[i],
+#                user_token=userTokenList[i])
+#        else:
+#            nd = neurodata(suppress_warnings=True, hostname=serverList[i])
+#
+#        # Check if project token has given channel
+#        ndstoreChannelList = nd.get_channels(tokenList[i]).keys()
+#        if len(ndstoreChannelList) == 0:
+#            raise Exception(
+#                'Project token "{0}" does not have any channels.'.format(
+#                    tokenList[i], channelList[i]))
+#        elif channelList[i] == "":
+#            # Use first channel if no channel was provided for this token.
+#            channelList[i] = ndstoreChannelList[0]
+#        elif not(channelList[i] in ndstoreChannelList):
+#            raise Exception(
+#                'Project token "{0}" does not have a channel named "{1}".'.format(
+#                    tokenList[i], channelList[i]))
+#
+#        # Get channel type, either "image" or "annotation" from ndstore
+#        channelType = nd.get_proj_info(tokenList[i])[
+#            'channels'][channelList[i]]['channel_type'].encode('ascii', 'ignore')
+#
+#        # ndviz uses name "segmentation" insted of "annotation" to dentote
+#        # annotation channels
+#        if channelType == "annotation":
+#            channelType = "segmentation"
+#        if channelType == "timeseries":
+#            channelType = "image"
+#
+#        channelDict = {
+#            'type': channelType,
+#            'source': 'ndstore://https://{server}/{token}/{channel}?neariso=false'.format(
+#                token=tokenList[i],
+#                channel=channelList[i],
+#                server=serverList[i])}
+#        layerDict["{0}?neariso=false".format(channelList[i])] = channelDict
+#
+#    ndvizDict = {}
+#    ndvizDict['layers'] = layerDict
+#    if use4Panel:
+#        ndvizDict['layout'] = '4panel'
+#    ndvizString = str(ndvizDict).replace(" ", "").replace(",", "_")
+#    ndvizBaseUrl = "https://mri.neurodata.io/ndviz/#!"
+#    ndvizUrl = ndvizBaseUrl + ndvizString
+#
+#    return ndvizUrl
