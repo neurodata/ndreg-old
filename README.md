@@ -1,4 +1,4 @@
-# ndreg
+# ndreg-old
 NeuroData's registration library, built in python using ITK
 
 Submit bug reports [here](https://github.com/openconnectome/ndreg/issues/new).
