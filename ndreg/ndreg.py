@@ -1796,7 +1796,177 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
 #    return compositeAffine
 
 
-def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, epsilon=None, useNearest=False,
+#def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, epsilon=None, useNearest=False,
+#                     useBias=False, useMI=False, verbose=False, debug=False, inMask=None, refMask=None, outDirPath=""):
+#    """
+#    Performs Metamorphic LDDMM between input and reference images
+#    """
+#    useTempDir = False
+#    if outDirPath == "":
+#        useTempDir = True
+#        outDirPath = tempfile.mkdtemp() + "/"
+#    else:
+#        outDirPath = dirMake(outDirPath)
+#
+#    inPath = outDirPath + "in.img"
+#    imgWrite(inImg, inPath)
+#    refPath = outDirPath + "ref.img"
+#    imgWrite(refImg, refPath)
+#    outPath = outDirPath + "out.img"
+#
+#    fieldPath = outDirPath + "field.vtk"
+#    invFieldPath = outDirPath + "invField.vtk"
+#
+#    binPath = ndregDirPath + "metamorphosis "
+#    steps = 5
+#    command = binPath + " --in {0} --ref {1} --out {2} --alpha {3} --beta {4} --field {5} --invfield {6} --iterations {7} --scale {8} --steps {9} --verbose ".format(
+#        inPath, refPath, outPath, alpha, beta, fieldPath, invFieldPath, iterations, scale, steps)
+#    if(not useBias):
+#        command += " --mu 0"
+#    if(useMI):
+#        # command += " --cost 1 --sigma 1e-5 --epsilon 1e-3"
+#        command += " --cost 1 --sigma 1e-4"
+#        if not(epsilon is None):
+#            command += " --epsilon {0}".format(epsilon)
+#        else:
+#            command += " --epsilon 1e-3"
+#    else:
+#        if not(epsilon is None):
+#            command += " --epsilon {0}".format(epsilon)
+#
+#    if(inMask):
+#        inMaskPath = outDirPath + "inMask.img"
+#        imgWrite(inMask, inMaskPath)
+#        command += " --inmask " + inMaskPath
+#
+#    if(refMask):
+#        refMaskPath = outDirPath + "refMask.img"
+#        imgWrite(refMask, refMaskPath)
+#        command += " --refmask " + refMaskPath
+#
+#    if debug:
+#        command = "/usr/bin/time -v " + command
+#        print(command)
+#
+#    # os.system(command)
+#    (returnValue, logText) = run(command, verbose=verbose)
+#
+#    logPath = outDirPath + "log.txt"
+#    txtWrite(logText, logPath)
+#
+#    field = imgRead(fieldPath)
+#    invField = imgRead(invFieldPath)
+#
+#    if useTempDir:
+#        shutil.rmtree(outDirPath)
+#    return (field, invField)
+#
+
+#def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, epsilonList=None,
+#                              useNearest=False, useBias=False, useMI=False, inMask=None, refMask=None, verbose=True, debug=False, outDirPath=""):
+#    """
+#    Performs Metamorphic LDDMM between input and reference images
+#    """
+#    useTempDir = False
+#    if outDirPath == "":
+#        useTempDir = True
+#        outDirPath = tempfile.mkdtemp() + "/"
+#    else:
+#        outDirPath = dirMake(outDirPath)
+#
+#    if isNumber(alphaList):
+#        alphaList = [float(alphaList)]
+#    if isNumber(betaList):
+#        betaList = [float(betaList)]
+#    if isNumber(scaleList):
+#        scaleList = [float(scaleList)]
+#
+#    numSteps = max(len(alphaList), len(betaList), len(scaleList))
+#
+#    if isNumber(epsilonList):
+#        epsilonList = [float(epsilonList)] * numSteps
+#    elif epsilonList is None:
+#        epsilonList = [None] * numSteps
+#
+#    if len(alphaList) != numSteps:
+#        if len(alphaList) != 1:
+#            raise Exception(
+#                "Legth of alphaList must be 1 or same length as betaList or scaleList")
+#        else:
+#            alphaList *= numSteps
+#
+#    if len(betaList) != numSteps:
+#        if len(betaList) != 1:
+#            raise Exception(
+#                "Legth of betaList must be 1 or same length as alphaList or scaleList")
+#        else:
+#            betaList *= numSteps
+#
+#    if len(scaleList) != numSteps:
+#        if len(scaleList) != 1:
+#            raise Exception(
+#                "Legth of scaleList must be 1 or same length as alphaList or betaList")
+#        else:
+#            scaleList *= numSteps
+#
+#    origInImg = inImg
+#    origInMask = inMask
+#    for step in range(numSteps):
+#        alpha = alphaList[step]
+#        beta = betaList[step]
+#        scale = scaleList[step]
+#        epsilon = epsilonList[step]
+#        stepDirPath = outDirPath + "step" + str(step) + "/"
+#        if(verbose):
+#            print("\nStep {0}: alpha={1}, beta={2}, scale={3}".format(
+#                step, alpha, beta, scale))
+#
+#        (field, invField) = imgMetamorphosis(inImg, refImg,
+#                                             alpha,
+#                                             beta,
+#                                             scale,
+#                                             iterations,
+#                                             epsilon,
+#                                             useNearest,
+#                                             useBias,
+#                                             useMI,
+#                                             verbose,
+#                                             debug,
+#                                             inMask=inMask,
+#                                             refMask=refMask,
+#                                             outDirPath=stepDirPath)
+#
+#        if step == 0:
+#            compositeField = field
+#            compositeInvField = invField
+#        else:
+#            compositeField = fieldApplyField(field, compositeField)
+#            compositeInvField = fieldApplyField(compositeInvField, invField, size=field.GetSize(
+#            ), spacing=field.GetSpacing())  # force invField to be same size as field
+#
+#            if outDirPath != "":
+#                fieldPath = stepDirPath + "field.vtk"
+#                invFieldPath = stepDirPath + "invField.vtk"
+#                imgWrite(compositeInvField, invFieldPath)
+#                imgWrite(compositeField, fieldPath)
+#
+#        inImg = imgApplyField(origInImg, compositeField, size=refImg.GetSize())
+#        if(inMask):
+#            inMask = imgApplyField(origInMask,
+#                                   compositeField, size=refImg.GetSize(), useNearest=True)
+#
+#    # Write final results
+#    if outDirPath != "":
+#        imgWrite(compositeField, outDirPath + "field.vtk")
+#        imgWrite(compositeInvField, outDirPath + "invField.vtk")
+#        imgWrite(inImg, outDirPath + "out.img")
+#        imgWrite(imgChecker(inImg, refImg), outDirPath + "checker.img")
+#
+#    if useTempDir:
+#        shutil.rmtree(outDirPath)
+#    return (compositeField, compositeInvField)
+#
+def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, epsilon=None, sigma=1e-4, useNearest=False,
                      useBias=False, useMI=False, verbose=False, debug=False, inMask=None, refMask=None, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
@@ -1825,15 +1995,19 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
         command += " --mu 0"
     if(useMI):
         # command += " --cost 1 --sigma 1e-5 --epsilon 1e-3"
-        command += " --cost 1 --sigma 1e-4"
+        command += " --cost 1 --sigma {}".format(sigma)
+#         command += " --epsilon {0}".format(epsilon)
         if not(epsilon is None):
             command += " --epsilon {0}".format(epsilon)
         else:
             command += " --epsilon 1e-3"
     else:
+        command += " --sigma {}".format(sigma)
+#         command += " --epsilon {0}".format(epsilon)
         if not(epsilon is None):
             command += " --epsilon {0}".format(epsilon)
-
+        else:
+            command += " --epsilon 1e-3"
     if(inMask):
         inMaskPath = outDirPath + "inMask.img"
         imgWrite(inMask, inMaskPath)
@@ -1862,7 +2036,7 @@ def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations
     return (field, invField)
 
 
-def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, epsilonList=None,
+def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, epsilonList=None, sigma=1e-4,
                               useNearest=False, useBias=False, useMI=False, inMask=None, refMask=None, verbose=True, debug=False, outDirPath=""):
     """
     Performs Metamorphic LDDMM between input and reference images
@@ -1927,6 +2101,7 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
                                              scale,
                                              iterations,
                                              epsilon,
+                                             sigma,
                                              useNearest,
                                              useBias,
                                              useMI,
@@ -1954,6 +2129,8 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
         if(inMask):
             inMask = imgApplyField(origInMask,
                                    compositeField, size=refImg.GetSize(), useNearest=True)
+        # vikram added this
+        imgShow(inImg, vmax=imgPercentile(inImg, 0.99))
 
     # Write final results
     if outDirPath != "":
@@ -1965,7 +2142,6 @@ def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scal
     if useTempDir:
         shutil.rmtree(outDirPath)
     return (compositeField, compositeInvField)
-
 
 def imgRegistration(inImg, refImg, scale=1.0, affineScale=1.0, lddmmScaleList=[1.0], lddmmAlphaList=[
                     0.02], iterations=1000, useMI=False, useNearest=True, inAffine=identityAffine, padding=0, inMask=None, refMask=None, verbose=False, outDirPath=""):
