@@ -25,9 +25,7 @@ RUN apt-get -y install \
   libfftw3-dev
 
 RUN pip install --upgrade pip
-RUN pip install matplotlib SimpleITK
-RUN pip install numpy
-RUN pip install ndio
+RUN pip install matplotlib SimpleITK numpy ndio psutil
 
 # We currently following 'master' to incorperate many recent bug fixes.
 # When stable, use the following instead:
@@ -38,14 +36,12 @@ WORKDIR /work/intern
 RUN python setup.py install
 
 # Set up ipython
-RUN pip install ipython
-RUN pip install ipython[all]
-RUN pip install jupyter
+RUN pip install ipython[all] jupyter
 
 # Build ndreg. Cache based on last commit.
 WORKDIR /work
-ADD https://api.github.com/repos/neurodata/ndreg/git/refs/heads/master version.json
-RUN git clone https://github.com/neurodata/ndreg.git /work/ndreg --branch master --single-branch
+ADD https://api.github.com/repos/neurodata/ndreg/git/refs/heads/vik-dev version.json
+RUN git clone https://github.com/neurodata/ndreg.git /work/ndreg --branch vik-dev --single-branch
 WORKDIR /work/ndreg
 RUN cmake . && make && make install
 

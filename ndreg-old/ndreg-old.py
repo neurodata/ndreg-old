@@ -306,20 +306,20 @@ def get_offset_boss(coord_frame, res=0, isotropic=False):
         int(coord_frame.y_start / (2.**res)),
         int(coord_frame.z_start / (2.**res)) if isotropic else coord_frame.z_start]
 
-    def imgUpload_boss(
-            remote,
-            img,
-            channel_resource,
-            coord_frame,
-            resolution=0,
-            start=[
-                0,
-                0,
-                0],
-            propagate=False,
-            isotropic=False):
-        if(img.GetDimension() == 2):
-            img = sitk.JoinSeriesImageFilter().Execute(img)
+def imgUpload_boss(
+        remote,
+        img,
+        channel_resource,
+        coord_frame,
+        resolution=0,
+        start=[
+            0,
+            0,
+            0],
+        propagate=False,
+        isotropic=False):
+    if(img.GetDimension() == 2):
+        img = sitk.JoinSeriesImageFilter().Execute(img)
 
     data = sitk.GetArrayFromImage(img)  # data is C-ordered (z y x)
 
@@ -344,78 +344,6 @@ def get_offset_boss(coord_frame, res=0, isotropic=False):
         raise(e)
 
 
-#def imgDownload(
-#        token,
-#        channel="",
-#        resolution=0,
-#        server=ndServerDefault,
-#        userToken="",
-#        size=[],
-#        start=[]):
-#    """
-#    Download image with given token from given server at given resolution.
-#    If channel isn't specified the first channel is downloaded.
-#    """
-#    # TODO: Fix size and start parameters
-#
-#    # Create neurodata instance
-#    if userToken != "":
-#        nd = neurodata(
-#            suppress_warnings=True,
-#            hostname=server,
-#            user_token=userToken)
-#    else:
-#        nd = neurodata(suppress_warnings=True, hostname=server)
-#
-#    # If channel isn't specified use first one
-#    channelList = nd.get_channels(token).keys()
-#    if len(channelList) == 0:
-#        raise Exception("No channels defined for given token.")
-#    elif channel == "":
-#        channel = channelList[0]
-#    elif not(channel in channelList):
-#        raise Exception(
-#            "Channel '{0}' does not exist for given token.".format(channel))
-#
-#    # Get image spacing, size, offset and data type from server
-#    metadata = nd.get_proj_info(token)
-#    spacingNm = metadata[u'dataset'][u'voxelres'][unicode(
-#        str(resolution))]  # Returns spacing in nanometers
-#    spacing = [x * 1e-6 for x in spacingNm]  # Convert spacing to mm
-#
-#    if size == []:
-#        size = nd.get_image_size(token, resolution)
-#    if start == []:
-#        start = nd.get_image_offset(token, resolution)
-#    dataType = metadata['channels'][channel]['datatype']
-#
-#    # Download all image data from specified channel
-#    array = nd.get_cutout(
-#        token,
-#        channel,
-#        start[0],
-#        size[0],
-#        start[1],
-#        size[1],
-#        start[2],
-#        size[2],
-#        resolution)
-#
-#    # Cast downloaded image to server's data type
-#    # convert numpy array to sitk image
-#    img = sitk.Cast(sitk.GetImageFromArray(array), ndToSitkDataTypes[dataType])
-#
-#    # Reverse axes order
-#    img = sitk.PermuteAxesImageFilter().Execute(img, range(dimension - 1, -1, -1))
-#    img.SetDirection(identityDirection)
-#    img.SetSpacing(spacing)
-#
-#    # Convert to 2D if only one slice
-#    img = imgCollaspeDimension(img)
-#
-#    return img
-#
-#
 def imgCopy(img):
     """
     Returns a copy of the input image
@@ -423,372 +351,6 @@ def imgCopy(img):
     return sitk.Image(img)
 
 
-#def limsGetMetadata(token):
-#    nd = neurodata()
-#    r = requests.get(nd.meta_url("metadata/ocp/get/" + token))
-#    return r.json()
-##
-#
-#def projGetMetadata(token):
-#    nd = neurodata()
-#    return nd.get_proj_info(token)
-#
-#
-#def limsSetMetadata(token, metadata):
-#    nd = neurodata()
-#    nd.set_metadata(token, metadata)
-#
-#
-#def imgPreprocess(
-#        inToken,
-#        refToken="",
-#        inChannel="",
-#        inResolution=0,
-#        refResolution=0,
-#        outDirPath="",
-#        doSteps=[
-#            1,
-#            1,
-#            1],
-#        verbose=True):
-#    """
-#    Downloads, resamples and reorients input image to the spacing and orientation of the reference image.
-#    This function assumes that the input token (and reference token if used) has a corresponding LIMS token.
-#    The LIMS metadata should contain \"spacing\" and \"orientation\" fields.
-#    The \"spacing\" field should specify the x, y and z spacing of the image in millimeters and e.g. spacing=[0.025, 0.025, 0.025]
-#    The \"orientation\" field should be orientation strings specifying the x, y, z orientation of the image e.g. orientation="las"
-#    See documentation of the \"imgReorient\" function for more details on orientation strings.
-#    """
-#    if outDirPath != "":
-#        outDirPath = dirMake(outDirPath)
-#    inMask = None
-#
-#    # Create NeuroData instance
-#    nd = neurodata()
-#
-#    # Set reference default spacing and orientation
-#    refSpacing = [0.025, 0.025, 0.025]
-#    refOrient = "rsa"  # Coronal sliced images
-#
-#    if refToken != "":
-#        # Get project metadata for reference token
-#        try:
-#            refProjMetadata = nd.get_proj_info(refToken)
-#        except BaseException:
-#            raise Exception(
-#                "Reference project token {0} was not found on server {1}".format(
-#                    refToken, nd.hostname))
-#
-#        # Get lims metadata (spacing and orientation) of reference token
-#        refLimsMetadata = limsGetMetadata(refToken)
-#
-#        if "spacing" in refLimsMetadata:
-#            refSpacing = refLimsMetadata["spacing"]
-#
-#            # Scale reference spacing values of input image based on resolution
-#            # level
-#            for i in range(0, dimension - 1):
-#                refSpacing[i] *= 2**refResolution
-#            if refProjMetadata['dataset']['scaling'] != 'zslices':
-#                refSpacing[dimension - 1] *= 2**refResolution
-#            else:
-#                if verbose:
-#                    print("Warning: Reference LIMS token {0} does not have an \"spacing\" feild. Using value of {1} from project token {0}".format(
-#                        refToken, refSpacing))
-#
-#        if "orientation" in refLimsMetadata:
-#            refOrient = refLimsMetadata["orientation"]
-#        else:
-#            if verbose:
-#                print("Warning: Reference LIMS token {0} does not have an \"orientation\" feild. Usign default value of ".format(
-#                    refToken, refOrient))
-#
-#    # Get project metadata for input token
-#    try:
-#        inProjMetadata = nd.get_proj_info(inToken)
-#    except BaseException:
-#        raise Exception(
-#            "Token {0} was not found on server {1}".format(
-#                inToken, nd.hostname))
-#
-#    # Get lims metadata for input token
-#    inLimsMetadata = limsGetMetadata(inToken)
-#
-#    # Download input image
-#    if doSteps[0]:
-#        if verbose:
-#            print("Downloading input image")
-#        inImg = imgDownload(
-#            inToken,
-#            channel=inChannel,
-#            resolution=inResolution)
-#
-#        # Check if downloaded image is empty
-#        epsilon = sys.float_info.epsilon
-#        stats = sitk.StatisticsImageFilter()
-#        stats.Execute(inImg)
-#
-#        if (stats.GetMean() < epsilon) and (stats.GetVariance() < epsilon):
-#            raise Exception(
-#                "Error: Input image downoaded from token {0} is empty".format(inToken))
-#
-#        inSpacing = inImg.GetSpacing()
-#
-#        # Set input image's spacing based on lims metadata
-#        if 'spacing' in inLimsMetadata.keys():
-#            # If lims metadata contains a spacing field then set spacing of
-#            # downloaded image using it
-#            inSpacing = inLimsMetadata['spacing']
-#
-#            # Scale spacing values of input image based on resolution level
-#            for i in range(0, dimension - 1):
-#                inSpacing[i] *= 2**inResolution
-#            if inProjMetadata['dataset']['scaling'] != 'zslices':
-#                inSpacing[dimension - 1] *= 2**inResolution
-#            inImg.SetSpacing(inSpacing)
-#        else:
-#            if verbose:
-#                print(
-#                    "Warning: LIMS token {0} does not have an \"spacing\" feild.  Using value of {1} from project token {0}".format(inToken, inSpacing))
-#
-#        if outDirPath != "":
-#            imgWrite(inImg, outDirPath + "/0_download/in.img")
-#
-#    # Resample input image to spacing of reference image
-#    if doSteps[1]:
-#        if verbose:
-#            print("Resampling input image")
-#        if outDirPath != "":
-#            inImg = imgRead(outDirPath + "/0_download/in.img")
-#        inImg = imgResample(inImg, refSpacing)
-#        if outDirPath != "":
-#            imgWrite(inImg, outDirPath + "/1_resample/in.img")
-#
-#    # Reorient input image to orientation of reference image
-#    if doSteps[2]:
-#        if outDirPath != "":
-#            inImg = imgRead(outDirPath + "/1_resample/in.img")
-#        if "orientation" in inLimsMetadata.keys():
-#            if verbose:
-#                print("Reorienting input image")
-#            # If lims metadata contains a orientation field then reorient image
-#            inOrient = inLimsMetadata["orientation"]
-#            inImg = imgReorient(inImg, inOrient, refOrient)
-#
-#            """
-#            # If there's there's affine info for the reference orientation then
-#            # apply it
-#            if refOrient+"Affine" in inLimsMetadata.keys():
-#                affine = inLimsMetadata[refOrient+"Affine"]
-#                inImg = imgApplyAffine(inImg, affine, size=inImg.GetSize())
-#            """
-#        else:
-#            if verbose:
-#                print(
-#                    "Warning: LIMS token {0} does not have an \"orientation\" feild. Could not reorient image.".format(inToken))
-#
-#        if outDirPath != "":
-#            imgWrite(inImg, outDirPath + "/2_reorient/in.img")
-#
-#    if outDirPath != "":
-#        imgWrite(inImg, outDirPath + "/in.img")
-#
-#    return inImg
-#
-#
-#def imgPostprocess(
-#        inImg,
-#        refToken,
-#        outToken,
-#        outChannel="",
-#        useNearest=False,
-#        doSteps=[
-#            1,
-#            1],
-#    verbose=False,
-#        outDirPath=""):
-#    if outDirPath != "":
-#        outDirPath = dirMake(outDirPath)
-#
-#    refLimsMetadata = limsGetMetadata(refToken)
-#    refOrient = refLimsMetadata["orientation"]
-#
-#    outProjMetadata = projGetMetadata(outToken)
-#    inToken = outProjMetadata["dataset"]["name"]
-#    inLimsMetadata = limsGetMetadata(inToken)
-#    inOrient = inLimsMetadata["orientation"]
-#
-#    if doSteps[0]:
-#        if verbose:
-#            print("Reorienting image")
-#        """
-#        if refOrient+"Affine" in inLimsMetadata.keys():
-#            invAffine = affineInverse(inLimsMetadata[refOrient+"Affine"])
-#            inImg = imgApplyAffine(
-#    inImg,
-#    invAffine,
-#    useNearest=useNearest,
-#     size=inImg.GetSize())
-#        """
-#        inImg = imgReorient(inImg, refOrient, inOrient)
-#        if outDirPath != "":
-#            imgWrite(inImg, outDirPath + "0_reorient/in.img")
-#
-#    if doSteps[1]:
-#        nd = neurodata()
-#        outResolution = 5
-#        outSpacing = inLimsMetadata["spacing"]
-#        outSize = list(
-#            np.array(
-#                nd.get_image_size(
-#                    outToken,
-#                    outResolution)) -
-#            np.array(
-#                nd.get_image_offset(
-#                    outToken,
-#                    outResolution)))
-#
-#        for i in range(dimension - 1):
-#            outSpacing[i] *= 2**outResolution
-#        if outProjMetadata["dataset"]["scaling"] != "zslices":
-#            outSpacing[dimension - 1] *= 2**outResolution
-#
-#        inImg = imgResample(
-#            inImg,
-#            spacing=outSpacing,
-#            size=outSize,
-#            useNearest=useNearest)
-#        if outDirPath != "":
-#            imgWrite(inImg, outDirPath + "1_resample/in.img")
-#
-#        if verbose:
-#            print("Uploading results")
-#        imgUpload(
-#            inImg,
-#            outToken,
-#            channel=outChannel,
-#            resolution=outResolution)
-#
-#
-#def imgUpload(
-#        img,
-#        token,
-#        channel="",
-#        resolution=0,
-#        start=[
-#            0,
-#            0,
-#            0],
-#    server=ndServerDefault,
-#    userToken="",
-#        propagate=False):
-#    """
-#    Upload image with given token from given server at given resolution.
-#    If channel isn't specified image is uploaded to default channel
-#    """
-#    # Create neurodata instance
-#
-#    if userToken != "":
-#        nd = neurodata(
-#            suppress_warnings=True,
-#            hostname=server,
-#            user_token=userToken)
-#    else:
-#        nd = neurodata(suppress_warnings=True, hostname=server)
-#
-#    # If channel isn't specified use first one
-#    channelList = nd.get_channels(token).keys()
-#    if len(channelList) == 0:
-#        raise Exception("No channels defined for token {0}.".format(token))
-#    elif channel == "":
-#        channel = channelList[0]
-#    elif not(channel in channelList):
-#        raise Exception(
-#            "Channel '{0}' does not exist for given token.".format(channel))
-#
-#    # Make input image 3D
-#    if(img.GetDimension() == 2):
-#        img = sitk.JoinSeriesImageFilter().Execute(img)
-#
-#    # Convert with RGB or RGBA multi-component images to uint32
-#    numComponents = img.GetNumberOfComponentsPerPixel()
-#    if numComponents in [3, 4]:
-#        for component in range(numComponents):
-#            #  Extract component
-#            caster = sitk.VectorIndexSelectionCastImageFilter()
-#            caster.SetIndex(component)
-#            componentImg = caster.Execute(img)
-#
-#            # Scale intensity to 8-bit range
-#            componentDatatype = sitkToNpDataTypes[componentImg.GetPixelID()]
-#
-#            componentMin = np.iinfo(componentDatatype).min
-#            componentMax = np.iinfo(componentDatatype).max
-#            componentImg = sitk.IntensityWindowingImageFilter().Execute(
-#                componentImg, componentMin, componentMax, 0, 255)
-#            componentImg = sitk.Cast(componentImg, sitk.sitkUInt32)
-#
-#            # Create RGBA image with red component in lowest order byte
-#            # followed by green and blue (and alpha)
-#            if component == 0:
-#                uint32Img = componentImg * 256**component
-#            else:
-#                uint32Img += componentImg * 256**component
-#
-#        # Fill alpha byte if no alpha component was given
-#        if numComponents == 3:
-#            uint32Img += 255 * 256**3
-#        img = uint32Img
-#
-#    elif numComponents == 2 or numComponents > 4:
-#        raise Exception("Error: Expected scaler, RGB or RGBA image")
-#
-#    # Get image size from server
-#    offset = nd.get_image_offset(token, resolution)
-#
-#    serverSize = list(
-#        np.array(
-#            nd.get_image_size(
-#                token,
-#                resolution)) -
-#        np.array(offset))
-#    imgSize = img.GetSize()
-#
-#    # Raise exception if input image is too big
-#    for i in range(img.GetDimension()):
-#        if imgSize[i] > serverSize[i]:
-#            raise Exception(
-#                "Input image with size {0} excedes bounds of token {1} with size {2}".format(imgSize, token, datasetSize))
-#
-#    # Get image data type from server
-#    metadata = nd.get_proj_info(token)
-#    dataType = metadata['channels'][channel]['datatype']
-#
-#    # Cast input image to server's data type
-#    castImg = sitk.Cast(img, ndToSitkDataTypes[dataType])
-#
-#    # Reverse axis order
-#    array = sitk.GetArrayFromImage(castImg).transpose(
-#        range(img.GetDimension() - 1, -1, -1))
-#
-#    # Upload all image data from specified channel
-#    nd.post_cutout(
-#        token,
-#        channel,
-#        offset[0] +
-#        start[0],
-#        offset[1] +
-#        start[1],
-#        offset[2] +
-#        start[2],
-#        data=array,
-#        resolution=resolution)
-#
-#    # Propagate
-#    if propagate:
-#        nd.propagate(token, channel)
-#
-#
 def imgWrite(img, path):
     """
     Write sitk image to path.
@@ -872,89 +434,89 @@ def imgResample(img, spacing, size=[], useNearest=False,
         outsideValue)
 
 
-def imgZoom(img, point, size, spacing=[], useNearest=False, outsideValue=0):
-    """
-    Returns image of given size centered at given point at resolution given by spacing
-    """
-    if len(point) != img.GetDimension():
-        raise Exception(
-            "len(point) != " + str(img.GetDimension()))
-    if len(size) != img.GetDimension():
-        raise Exception(
-            "len(size) != " + str(img.GetDimension()))
-    if spacing == []:
-        spacing = img.GetSpacing()
-    else:
-        if len(spacing) != img.GetDimension():
-            raise Exception(
-                "len(spacing) != " + str(img.GetDimension()))
-
-    origin = np.array(point) - np.array(size) * np.array(spacing) * 0.5
-    return imgResample(img, spacing, size, useNearest, origin, outsideValue)
-
-
-def imgPad(img, padding=0, useNearest=False):
-    """
-    Pads image by given ammount of padding in units spacing.
-    For example if the input image has a voxel spacing of 0.5 and the padding=2.0 then the image will be padded by 4 voxels.
-    If the padding < 0 then the filter crops the image
-    """
-    if isNumber(padding):
-        padding = [padding] * img.GetDimension()
-    elif len(padding) != img.GetDimension():
-        raise Exception(
-            "padding must have length {0}.".format(img.GetDimension()))
-
-    interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
-    translationTransform = sitk.TranslationTransform(
-        img.GetDimension(), -np.array(padding))
-    spacing = img.GetSpacing()
-    size = list(img.GetSize())
-    for i in range(img.GetDimension()):
-        if padding[i] > 0:
-            paddingVoxel = int(math.ceil(2 * padding[i] / spacing[i]))
-        else:
-            paddingVoxel = int(math.floor(2 * padding[i] / spacing[i]))
-        size[i] += paddingVoxel
-
-    origin = [0] * img.GetDimension()
-    return sitk.Resample(img, size, translationTransform,
-                         interpolator, origin, spacing)
-
-
-def imgLargestMaskObject(maskImg):
-    ccFilter = sitk.ConnectedComponentImageFilter()
-    labelImg = ccFilter.Execute(maskImg)
-    numberOfLabels = ccFilter.GetObjectCount()
-    labelArray = sitk.GetArrayFromImage(labelImg)
-    labelSizes = np.bincount(labelArray.flatten())
-    largestLabel = np.argmax(labelSizes[1:]) + 1
-    outImg = sitk.GetImageFromArray(
-        (labelArray == largestLabel).astype(np.int16))
-    # output image should have same metadata as input mask image
-    outImg.CopyInformation(maskImg)
-    return outImg
-
-
-def createTmpRegistration(inMask=None, refMask=None,
-                          samplingFraction=1.0, dimension=dimension):
-    identityTransform = sitk.Transform(dimension, sitk.sitkIdentity)
-    tmpRegistration = sitk.ImageRegistrationMethod()
-    tmpRegistration.SetInterpolator(sitk.sitkNearestNeighbor)
-    tmpRegistration.SetInitialTransform(identityTransform)
-    tmpRegistration.SetOptimizerAsGradientDescent(
-        learningRate=1e-14, numberOfIterations=1)
-    if samplingFraction != 1.0:
-        tmpRegistration.SetMetricSamplingPercentage(samplingFraction)
-        tmpRegistration.SetMetricSamplingPercentage(tmpRegistration.RANDOM)
-
-    if(inMask):
-        tmpRegistration.SetMetricMovingMask(inMask)
-    if(refMask):
-        tmpRregistration.SetMetricFixedMask(refMask)
-
-    return tmpRegistration
-
+#def imgZoom(img, point, size, spacing=[], useNearest=False, outsideValue=0):
+#    """
+#    Returns image of given size centered at given point at resolution given by spacing
+#    """
+#    if len(point) != img.GetDimension():
+#        raise Exception(
+#            "len(point) != " + str(img.GetDimension()))
+#    if len(size) != img.GetDimension():
+#        raise Exception(
+#            "len(size) != " + str(img.GetDimension()))
+#    if spacing == []:
+#        spacing = img.GetSpacing()
+#    else:
+#        if len(spacing) != img.GetDimension():
+#            raise Exception(
+#                "len(spacing) != " + str(img.GetDimension()))
+#
+#    origin = np.array(point) - np.array(size) * np.array(spacing) * 0.5
+#    return imgResample(img, spacing, size, useNearest, origin, outsideValue)
+#
+#
+#def imgPad(img, padding=0, useNearest=False):
+#    """
+#    Pads image by given ammount of padding in units spacing.
+#    For example if the input image has a voxel spacing of 0.5 and the padding=2.0 then the image will be padded by 4 voxels.
+#    If the padding < 0 then the filter crops the image
+#    """
+#    if isNumber(padding):
+#        padding = [padding] * img.GetDimension()
+#    elif len(padding) != img.GetDimension():
+#        raise Exception(
+#            "padding must have length {0}.".format(img.GetDimension()))
+#
+#    interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
+#    translationTransform = sitk.TranslationTransform(
+#        img.GetDimension(), -np.array(padding))
+#    spacing = img.GetSpacing()
+#    size = list(img.GetSize())
+#    for i in range(img.GetDimension()):
+#        if padding[i] > 0:
+#            paddingVoxel = int(math.ceil(2 * padding[i] / spacing[i]))
+#        else:
+#            paddingVoxel = int(math.floor(2 * padding[i] / spacing[i]))
+#        size[i] += paddingVoxel
+#
+#    origin = [0] * img.GetDimension()
+#    return sitk.Resample(img, size, translationTransform,
+#                         interpolator, origin, spacing)
+#
+#
+#def imgLargestMaskObject(maskImg):
+#    ccFilter = sitk.ConnectedComponentImageFilter()
+#    labelImg = ccFilter.Execute(maskImg)
+#    numberOfLabels = ccFilter.GetObjectCount()
+#    labelArray = sitk.GetArrayFromImage(labelImg)
+#    labelSizes = np.bincount(labelArray.flatten())
+#    largestLabel = np.argmax(labelSizes[1:]) + 1
+#    outImg = sitk.GetImageFromArray(
+#        (labelArray == largestLabel).astype(np.int16))
+#    # output image should have same metadata as input mask image
+#    outImg.CopyInformation(maskImg)
+#    return outImg
+#
+#
+#def createTmpRegistration(inMask=None, refMask=None,
+#                          samplingFraction=1.0, dimension=dimension):
+#    identityTransform = sitk.Transform(dimension, sitk.sitkIdentity)
+#    tmpRegistration = sitk.ImageRegistrationMethod()
+#    tmpRegistration.SetInterpolator(sitk.sitkNearestNeighbor)
+#    tmpRegistration.SetInitialTransform(identityTransform)
+#    tmpRegistration.SetOptimizerAsGradientDescent(
+#        learningRate=1e-14, numberOfIterations=1)
+#    if samplingFraction != 1.0:
+#        tmpRegistration.SetMetricSamplingPercentage(samplingFraction)
+#        tmpRegistration.SetMetricSamplingPercentage(tmpRegistration.RANDOM)
+#
+#    if(inMask):
+#        tmpRegistration.SetMetricMovingMask(inMask)
+#    if(refMask):
+#        tmpRregistration.SetMetricFixedMask(refMask)
+#
+#    return tmpRegistration
+#
 
 def imgCollaspeDimension(inImg):
     inSize = inImg.GetSize()
@@ -1058,48 +620,48 @@ def imgThreshold(img, threshold=0):
     return sitk.BinaryThreshold(img, 0, threshold, 0, 1)
 
 
-def imgMakeMask(inImg, threshold=None, forgroundValue=1):
-    """
-    Generates morphologically smooth mask with given forground value from input image.
-    If a threshold is given, the binary mask is initialzed using the given threshold...
-    ...Otherwise it is initialized using Otsu's Method.
-    """
-
-    if threshold is None:
-        # Initialize binary mask using otsu threshold
-        inMask = sitk.BinaryThreshold(
-            inImg, 0, 0, 0, forgroundValue)  # Mask of non-zero voxels
-        otsuThresholder = sitk.OtsuThresholdImageFilter()
-        otsuThresholder.SetInsideValue(0)
-        otsuThresholder.SetOutsideValue(forgroundValue)
-        otsuThresholder.SetMaskValue(forgroundValue)
-        tmpMask = otsuThresholder.Execute(inImg, inMask)
-    else:
-        # initialzie binary mask using given threshold
-        tmpMask = sitk.BinaryThreshold(inImg, 0, threshold, 0, forgroundValue)
-
-    # Assuming input image is has isotropic resolution...
-    # ... compute size of morphological kernels in voxels.
-    spacing = min(list(inImg.GetSpacing()))
-    openingRadiusMM = 0.05  # In mm
-    closingRadiusMM = 0.2   # In mm
-    openingRadius = max(1, int(round(openingRadiusMM / spacing)))  # In voxels
-    closingRadius = max(1, int(round(closingRadiusMM / spacing)))  # In voxels
-
-    # Morphological open mask remove small background objects
-    opener = sitk.GrayscaleMorphologicalOpeningImageFilter()
-    opener.SetKernelType(sitk.sitkBall)
-    opener.SetKernelRadius(openingRadius)
-    tmpMask = opener.Execute(tmpMask)
-
-    # Morphologically close mask to fill in any holes
-    closer = sitk.GrayscaleMorphologicalClosingImageFilter()
-    closer.SetKernelType(sitk.sitkBall)
-    closer.SetKernelRadius(closingRadius)
-    outMask = closer.Execute(tmpMask)
-
-    return imgLargestMaskObject(outMask)
-
+#def imgMakeMask(inImg, threshold=None, forgroundValue=1):
+#    """
+#    Generates morphologically smooth mask with given forground value from input image.
+#    If a threshold is given, the binary mask is initialzed using the given threshold...
+#    ...Otherwise it is initialized using Otsu's Method.
+#    """
+#
+#    if threshold is None:
+#        # Initialize binary mask using otsu threshold
+#        inMask = sitk.BinaryThreshold(
+#            inImg, 0, 0, 0, forgroundValue)  # Mask of non-zero voxels
+#        otsuThresholder = sitk.OtsuThresholdImageFilter()
+#        otsuThresholder.SetInsideValue(0)
+#        otsuThresholder.SetOutsideValue(forgroundValue)
+#        otsuThresholder.SetMaskValue(forgroundValue)
+#        tmpMask = otsuThresholder.Execute(inImg, inMask)
+#    else:
+#        # initialzie binary mask using given threshold
+#        tmpMask = sitk.BinaryThreshold(inImg, 0, threshold, 0, forgroundValue)
+#
+#    # Assuming input image is has isotropic resolution...
+#    # ... compute size of morphological kernels in voxels.
+#    spacing = min(list(inImg.GetSpacing()))
+#    openingRadiusMM = 0.05  # In mm
+#    closingRadiusMM = 0.2   # In mm
+#    openingRadius = max(1, int(round(openingRadiusMM / spacing)))  # In voxels
+#    closingRadius = max(1, int(round(closingRadiusMM / spacing)))  # In voxels
+#
+#    # Morphological open mask remove small background objects
+#    opener = sitk.GrayscaleMorphologicalOpeningImageFilter()
+#    opener.SetKernelType(sitk.sitkBall)
+#    opener.SetKernelRadius(openingRadius)
+#    tmpMask = opener.Execute(tmpMask)
+#
+#    # Morphologically close mask to fill in any holes
+#    closer = sitk.GrayscaleMorphologicalClosingImageFilter()
+#    closer.SetKernelType(sitk.sitkBall)
+#    closer.SetKernelRadius(closingRadius)
+#    outMask = closer.Execute(tmpMask)
+#
+#    return imgLargestMaskObject(outMask)
+#
 
 def imgMask(img, mask):
     """
@@ -1444,143 +1006,6 @@ def imgChecker(inImg, refImg, useHM=True, pattern=[4] * dimension):
 
     return sitk.CheckerBoardImageFilter().Execute(inImg, refImg, pattern)
 
-
-# def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False,
-#              numBins=32, iterations=1000, inMask=None, refMask=None, verbose=False, epsilon=0.1):
-#    """
-#    Perform Affine Registration between input image and reference image
-#    """
-#    inDimension = inImg.GetDimension()
-
-    # Rescale images
-#    refSpacing = refImg.GetSpacing()
-#    spacing = [x / scale for x in refSpacing]
-#    inImg = imgResample(inImg, spacing, useNearest=useNearest)
-#    refImg = imgResample(refImg, spacing, useNearest=useNearest)
-#    if(inMask):
-#        imgResample(inMask, spacing, useNearest=False)
-#    if(refMask):
-#        imgResample(refMask, spacing, useNearest=False)
-#
-#    # Set interpolator
-#    interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
-#
-#    # Set transform
-#    try:
-#        rigidTransformList = [
- #           sitk.Similarity2DTransform(), sitk.Similarity3DTransform()]
- #       transform = [sitk.TranslationTransform(inDimension), sitk.ScaleTransform(
- #           inDimension), rigidTransformList[inDimension - 2], sitk.AffineTransform(inDimension)][method]
- #   except BaseException:
- #       raise Exception("method is invalid")
-#
-#    # Do registration
-#    registration = sitk.ImageRegistrationMethod()
-#    registration.SetInterpolator(interpolator)
-#    registration.SetInitialTransform(transform)
-#
-#    if(inMask):
-#        registration.SetMetricMovingMask(inMask)
-#    if(refMask):
-#        registration.SetMetricFixedMask(refMask)
-#
-#    if useMI:
-#        registration.SetMetricAsMattesMutualInformation(numBins)
-#
-#    else:
-#        registration.SetMetricAsMeanSquares()
-#
-#    registration.SetOptimizerAsRegularStepGradientDescent(
-#        learningRate=epsilon, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration, minStep=0.001)
-#    if(verbose):
-#        registration.AddCommand(sitk.sitkIterationEvent, lambda: print(
-#            "{0}.\t {1}".format(registration.GetOptimizerIteration(), registration.GetMetricValue())))
-#
-#    # if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])
-#
-#    sigma = np.mean(np.array(refImg.GetSize()) *
-#                    np.array(refImg.GetSpacing()) * 0.02)
-#    registration.Execute(sitk.SmoothingRecursiveGaussian(refImg, sigma),
-#                         sitk.SmoothingRecursiveGaussian(inImg, sigma))
-#
-#    idAffine = list(sitk.AffineTransform(inDimension).GetParameters())
-#
-#    if method == ndregTranslation:
-#        affine = idAffine[0:inDimension**2] + list(transform.GetOffset())
-#    elif method == ndregScale:
-#        affine = np.diag(transform.GetScale()).flatten(
-#        ).tolist() + idAffine[inDimension**2:]
-#    else:
-#        affine = list(transform.GetMatrix()) + list(transform.GetTranslation())
-#    return affine
-# def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False, numBins=32, iterations=1000, inMask=None, refMask=None, verbose=False, epsilon=0.1):
-#     """
-#     Perform Affine Registration between input image and reference image
-#     """
-#     inDimension = inImg.GetDimension()
-
-#     # Rescale images
-#     refSpacing = refImg.GetSpacing()
-#     spacing = [x / scale for x in refSpacing]
-#     inImg = imgResample(inImg, spacing, useNearest=useNearest)
-#     refImg = imgResample(refImg, spacing, useNearest=useNearest)
-#     if(inMask): imgResample(inMask, spacing, useNearest=False)
-#     if(refMask): imgResample(refMask, spacing, useNearest=False)
-
-#     # Set interpolator
-#     interpolator = [sitk.sitkLinear, sitk.sitkNearestNeighbor][useNearest]
-    
-#     # Set transform
-#     try:
-#         rigidTransformList = [sitk.Similarity2DTransform(), sitk.Similarity3DTransform()]
-#         transform = [sitk.TranslationTransform(inDimension), sitk.ScaleTransform(inDimension), rigidTransformList[inDimension-2], sitk.AffineTransform(inDimension)][method]
-#         refCenter = refImg.TransformIndexToPhysicalPoint(np.array(refImg.GetSize())/2)
-#         if method > ndregTranslation: transform.SetCenter(refCenter) # Use centered transform
-#     except:
-#         raise Exception("method is invalid")
-    
-#     # Do registration
-#     registration = sitk.ImageRegistrationMethod()
-#     registration.SetInterpolator(interpolator)
-#     registration.SetInitialTransform(transform)
-
-#     if(inMask): registration.SetMetricMovingMask(inMask)
-#     if(refMask): registration.SetMetricFixedMask(refMask)
-    
-#     if useMI:
-#         registration.SetMetricAsMattesMutualInformation(numBins)
- 
-#     else:
-#         registration.SetMetricAsMeanSquares()
-
-#     registration.SetOptimizerAsRegularStepGradientDescent(learningRate=epsilon, numberOfIterations=iterations, estimateLearningRate=registration.EachIteration,minStep=0.001)
-#     if(verbose): registration.AddCommand(sitk.sitkIterationEvent, lambda : print("{0}.\t {1}".format(registration.GetOptimizerIteration(),registration.GetMetricValue())))
-
-#     ### if method == ndregRigid: registration.SetOptimizerScales([1,1,1,1,1,1,0.1])    
-#     sigma = np.mean(np.array(refImg.GetSize())*np.array(refImg.GetSpacing())*0.02)
-#     registration.Execute(sitk.SmoothingRecursiveGaussian(refImg,sigma),
-#                          sitk.SmoothingRecursiveGaussian(inImg,sigma) )
-
-
-#     idAffine = list(sitk.AffineTransform(inDimension).GetParameters())    
-
-#     if method > ndregTranslation:
-#         try:
-#             t = transform.GetTranslation() # Try to copy translation parameteers if available
-#         except:
-#             t = [0]*inDimension
-
-#         # Convert translation to offset
-#         A = np.mat(transform.GetMatrix()).reshape(inDimension, inDimension)
-#         c = np.mat(refCenter).transpose()
-#         b = np.mat(t).transpose()
-#         offset = b+c - A*c
-
-#         affine = list(transform.GetMatrix()) + offset.flatten().tolist()[0]
-#     else:
-#         affine = idAffine[0:inDimension**2] + list(transform.GetOffset())
-
-#     return affine
 def imgAffine(inImg, refImg, method=ndregAffine, scale=1.0, useNearest=False, useMI=False, numBins=32, iterations=1000, inMask=None, refMask=None, verbose=False, epsilon=0.1):
     """
     Perform Affine Registration between input image and reference image
@@ -1745,227 +1170,6 @@ def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, 
 
     return compositeAffine
 
-# def imgAffineComposite(inImg, refImg, scale=1.0, useNearest=False, useMI=False, iterations=1000, inAffine=None,verbose=False, inMask=None, refMask=None, outDirPath="", epsilon=0.1):
-#    if outDirPath != "": outDirPath = dirMake(outDirPath)
-#
-#    origInImg = inImg
-#    origInMask = inMask
-#    origRefMask = refMask
-
-#    # initilize using input affine
-#    inDimension = inImg.GetDimension()
-#    if inAffine is None: inAffine = list(sitk.AffineTransform(inDimension).GetParameters())
-#
-#    compositeAffine = inAffine
-#    inImg = imgApplyAffine(origInImg, compositeAffine)
-#    if(inMask): inMask = imgApplyAffine(origInMask, compositeAffine, useNearest=True)
-#
-#    if outDirPath != "":
-#        imgWrite(inImg, outDirPath+"0_initial/in.img")
-#        if(inMask): imgWrite(inMask, outDirPath+"0_initial/inMask.img")
-#        txtWriteList(compositeAffine, outDirPath+"0_initial/affine.txt")
-#
-#    methodList = [ndregTranslation, ndregScale, ndregRigid, ndregAffine]
-#    methodNameList = ["translation", "scale", "rigid", "affine"]
-#    ###methodList = [ndregTranslation, ndregScale, ndregAffine]
-#    ###methodNameList = ["translation", "scale", "affine"]
-#
-#    for (step, method) in enumerate(methodList):
-#        methodName = methodNameList[step]
-#        stepDirPath = outDirPath + str(step+1) + "_" + methodName + "/"
-#        if outDirPath != "": dirMake(stepDirPath)
-#        if(verbose): print("Step {0}:".format(methodName))
-#
-#        affine = imgAffine(inImg, refImg, method=method, scale=scale, useNearest=useNearest, useMI=useMI, iterations=iterations, inMask=inMask, refMask=refMask, verbose=verbose, epsilon=epsilon)
-#        compositeAffine = affineApplyAffine(affine, compositeAffine)
-#
-#        inImg = imgApplyAffine(origInImg, compositeAffine, size=refImg.GetSize())
-#        if(inMask): inMask = imgApplyAffine(origInMask, compositeAffine, size=refImg.GetSize(), useNearest=False)
-#
-#        if outDirPath != "":
-#            imgWrite(inImg, stepDirPath+"in.img")
-#            if(inMask): imgWrite(inMask, stepDirPath+"inMask.img")
-#            txtWriteList(compositeAffine, stepDirPath+"affine.txt")
-#
-    # Write final results
-#    if outDirPath != "":
-#        txtWrite(compositeAffine, outDirPath+"affine.txt")
-#        imgWrite(inImg, outDirPath+"out.img")
-#        imgWrite(imgChecker(inImg, refImg), outDirPath+"checker.img")
-#
-#    return compositeAffine
-
-
-#def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, epsilon=None, useNearest=False,
-#                     useBias=False, useMI=False, verbose=False, debug=False, inMask=None, refMask=None, outDirPath=""):
-#    """
-#    Performs Metamorphic LDDMM between input and reference images
-#    """
-#    useTempDir = False
-#    if outDirPath == "":
-#        useTempDir = True
-#        outDirPath = tempfile.mkdtemp() + "/"
-#    else:
-#        outDirPath = dirMake(outDirPath)
-#
-#    inPath = outDirPath + "in.img"
-#    imgWrite(inImg, inPath)
-#    refPath = outDirPath + "ref.img"
-#    imgWrite(refImg, refPath)
-#    outPath = outDirPath + "out.img"
-#
-#    fieldPath = outDirPath + "field.vtk"
-#    invFieldPath = outDirPath + "invField.vtk"
-#
-#    binPath = ndregDirPath + "metamorphosis "
-#    steps = 5
-#    command = binPath + " --in {0} --ref {1} --out {2} --alpha {3} --beta {4} --field {5} --invfield {6} --iterations {7} --scale {8} --steps {9} --verbose ".format(
-#        inPath, refPath, outPath, alpha, beta, fieldPath, invFieldPath, iterations, scale, steps)
-#    if(not useBias):
-#        command += " --mu 0"
-#    if(useMI):
-#        # command += " --cost 1 --sigma 1e-5 --epsilon 1e-3"
-#        command += " --cost 1 --sigma 1e-4"
-#        if not(epsilon is None):
-#            command += " --epsilon {0}".format(epsilon)
-#        else:
-#            command += " --epsilon 1e-3"
-#    else:
-#        if not(epsilon is None):
-#            command += " --epsilon {0}".format(epsilon)
-#
-#    if(inMask):
-#        inMaskPath = outDirPath + "inMask.img"
-#        imgWrite(inMask, inMaskPath)
-#        command += " --inmask " + inMaskPath
-#
-#    if(refMask):
-#        refMaskPath = outDirPath + "refMask.img"
-#        imgWrite(refMask, refMaskPath)
-#        command += " --refmask " + refMaskPath
-#
-#    if debug:
-#        command = "/usr/bin/time -v " + command
-#        print(command)
-#
-#    # os.system(command)
-#    (returnValue, logText) = run(command, verbose=verbose)
-#
-#    logPath = outDirPath + "log.txt"
-#    txtWrite(logText, logPath)
-#
-#    field = imgRead(fieldPath)
-#    invField = imgRead(invFieldPath)
-#
-#    if useTempDir:
-#        shutil.rmtree(outDirPath)
-#    return (field, invField)
-#
-
-#def imgMetamorphosisComposite(inImg, refImg, alphaList=0.02, betaList=0.05, scaleList=1.0, iterations=1000, epsilonList=None,
-#                              useNearest=False, useBias=False, useMI=False, inMask=None, refMask=None, verbose=True, debug=False, outDirPath=""):
-#    """
-#    Performs Metamorphic LDDMM between input and reference images
-#    """
-#    useTempDir = False
-#    if outDirPath == "":
-#        useTempDir = True
-#        outDirPath = tempfile.mkdtemp() + "/"
-#    else:
-#        outDirPath = dirMake(outDirPath)
-#
-#    if isNumber(alphaList):
-#        alphaList = [float(alphaList)]
-#    if isNumber(betaList):
-#        betaList = [float(betaList)]
-#    if isNumber(scaleList):
-#        scaleList = [float(scaleList)]
-#
-#    numSteps = max(len(alphaList), len(betaList), len(scaleList))
-#
-#    if isNumber(epsilonList):
-#        epsilonList = [float(epsilonList)] * numSteps
-#    elif epsilonList is None:
-#        epsilonList = [None] * numSteps
-#
-#    if len(alphaList) != numSteps:
-#        if len(alphaList) != 1:
-#            raise Exception(
-#                "Legth of alphaList must be 1 or same length as betaList or scaleList")
-#        else:
-#            alphaList *= numSteps
-#
-#    if len(betaList) != numSteps:
-#        if len(betaList) != 1:
-#            raise Exception(
-#                "Legth of betaList must be 1 or same length as alphaList or scaleList")
-#        else:
-#            betaList *= numSteps
-#
-#    if len(scaleList) != numSteps:
-#        if len(scaleList) != 1:
-#            raise Exception(
-#                "Legth of scaleList must be 1 or same length as alphaList or betaList")
-#        else:
-#            scaleList *= numSteps
-#
-#    origInImg = inImg
-#    origInMask = inMask
-#    for step in range(numSteps):
-#        alpha = alphaList[step]
-#        beta = betaList[step]
-#        scale = scaleList[step]
-#        epsilon = epsilonList[step]
-#        stepDirPath = outDirPath + "step" + str(step) + "/"
-#        if(verbose):
-#            print("\nStep {0}: alpha={1}, beta={2}, scale={3}".format(
-#                step, alpha, beta, scale))
-#
-#        (field, invField) = imgMetamorphosis(inImg, refImg,
-#                                             alpha,
-#                                             beta,
-#                                             scale,
-#                                             iterations,
-#                                             epsilon,
-#                                             useNearest,
-#                                             useBias,
-#                                             useMI,
-#                                             verbose,
-#                                             debug,
-#                                             inMask=inMask,
-#                                             refMask=refMask,
-#                                             outDirPath=stepDirPath)
-#
-#        if step == 0:
-#            compositeField = field
-#            compositeInvField = invField
-#        else:
-#            compositeField = fieldApplyField(field, compositeField)
-#            compositeInvField = fieldApplyField(compositeInvField, invField, size=field.GetSize(
-#            ), spacing=field.GetSpacing())  # force invField to be same size as field
-#
-#            if outDirPath != "":
-#                fieldPath = stepDirPath + "field.vtk"
-#                invFieldPath = stepDirPath + "invField.vtk"
-#                imgWrite(compositeInvField, invFieldPath)
-#                imgWrite(compositeField, fieldPath)
-#
-#        inImg = imgApplyField(origInImg, compositeField, size=refImg.GetSize())
-#        if(inMask):
-#            inMask = imgApplyField(origInMask,
-#                                   compositeField, size=refImg.GetSize(), useNearest=True)
-#
-#    # Write final results
-#    if outDirPath != "":
-#        imgWrite(compositeField, outDirPath + "field.vtk")
-#        imgWrite(compositeInvField, outDirPath + "invField.vtk")
-#        imgWrite(inImg, outDirPath + "out.img")
-#        imgWrite(imgChecker(inImg, refImg), outDirPath + "checker.img")
-#
-#    if useTempDir:
-#        shutil.rmtree(outDirPath)
-#    return (compositeField, compositeInvField)
-#
 def imgMetamorphosis(inImg, refImg, alpha=0.02, beta=0.05, scale=1.0, iterations=1000, epsilon=None, sigma=1e-4, useNearest=False,
                      useBias=False, useMI=False, verbose=False, debug=False, inMask=None, refMask=None, outDirPath=""):
     """
@@ -2621,84 +1825,3 @@ def lmkApplyField(inLmk, field, spacing=[1, 1, 1]):
         outLmkList += [[name] + list(outPoint)]
 
     return landmarks(outLmkList, inLmk.spacing)
-
-
-#def vizUrl(tokenList, channelList=[], serverList=[],
-#           userTokenList=[], use4Panel=True):
-#    if isinstance(tokenList, basestring):
-#        tokenList = [tokenList]
-#    numTokens = len(tokenList)
-#
-#    if isinstance(channelList, basestring):
-#        channelList = [channelList]
-#    if len(channelList) == 0:
-#        channelList = [""] * numTokens
-#    if len(channelList) != numTokens:
-#        raise Exception("len(channelList) != len(tokenList)")
-#
-#    if isinstance(serverList, basestring):
-#        serverList = [serverList] * numTokens
-#    if len(serverList) == 0:
-#        serverList = [ndServerDefault] * numTokens
-#    if len(serverList) != numTokens:
-#        raise Exception("len(serverList) != len(tokenList)")
-#
-#    if isinstance(userTokenList, basestring):
-#        userTokenList = [userTokenList] * numTokens
-#    if len(userTokenList) == 0:
-#        userTokenList = [""] * numTokens
-#    if len(userTokenList) != numTokens:
-#        raise Exception("len(userTokenList) != len(tokenList)")
-#
-#    layerDict = {}
-#    for i in range(0, numTokens):
-#        if userTokenList[i] != "":
-#            nd = neurodata(
-#                suppress_warnings=True,
-#                hostname=serverList[i],
-#                user_token=userTokenList[i])
-#        else:
-#            nd = neurodata(suppress_warnings=True, hostname=serverList[i])
-#
-#        # Check if project token has given channel
-#        ndstoreChannelList = nd.get_channels(tokenList[i]).keys()
-#        if len(ndstoreChannelList) == 0:
-#            raise Exception(
-#                'Project token "{0}" does not have any channels.'.format(
-#                    tokenList[i], channelList[i]))
-#        elif channelList[i] == "":
-#            # Use first channel if no channel was provided for this token.
-#            channelList[i] = ndstoreChannelList[0]
-#        elif not(channelList[i] in ndstoreChannelList):
-#            raise Exception(
-#                'Project token "{0}" does not have a channel named "{1}".'.format(
-#                    tokenList[i], channelList[i]))
-#
-#        # Get channel type, either "image" or "annotation" from ndstore
-#        channelType = nd.get_proj_info(tokenList[i])[
-#            'channels'][channelList[i]]['channel_type'].encode('ascii', 'ignore')
-#
-#        # ndviz uses name "segmentation" insted of "annotation" to dentote
-#        # annotation channels
-#        if channelType == "annotation":
-#            channelType = "segmentation"
-#        if channelType == "timeseries":
-#            channelType = "image"
-#
-#        channelDict = {
-#            'type': channelType,
-#            'source': 'ndstore://https://{server}/{token}/{channel}?neariso=false'.format(
-#                token=tokenList[i],
-#                channel=channelList[i],
-#                server=serverList[i])}
-#        layerDict["{0}?neariso=false".format(channelList[i])] = channelDict
-#
-#    ndvizDict = {}
-#    ndvizDict['layers'] = layerDict
-#    if use4Panel:
-#        ndvizDict['layout'] = '4panel'
-#    ndvizString = str(ndvizDict).replace(" ", "").replace(",", "_")
-#    ndvizBaseUrl = "https://mri.neurodata.io/ndviz/#!"
-#    ndvizUrl = ndvizBaseUrl + ndvizString
-#
-#    return ndvizUrl
