@@ -1,9 +1,9 @@
 from setuptools import setup
-setup(name="ndreg",
+setup(name="ndreg-old",
       version="${PACKAGE_VERSION}",
-      packages=["ndreg"],      
+      packages=["ndreg-old"],      
       package_data = {'': ["metamorphosis"]},
       include_package_data=True,
-      install_requires=['SimpleITK','ndio', 'numpy'],
+      install_requires=['SimpleITK', 'numpy'],
       zip_safe=False
 )

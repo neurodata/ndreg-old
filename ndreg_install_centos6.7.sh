@@ -22,8 +22,8 @@ cd ../.. && rm -rf itk #Clean up
 sudo /usr/local/bin/pip install  --trusted-host www.simpleitk.org -f http://www.simpleitk.org/SimpleITK/resources/software.html SimpleITK
 
 # Build and install ndreg
-mkdir ndreg; cd ndreg
-git clone https://github.com/neurodata/ndreg.git ./src
+mkdir ndreg-old; cd ndreg-old
+git clone https://github.com/neurodata/ndreg-old.git ./src
 mkdir bin; cd bin
 cmake -G "Unix Makefiles" ../src
 make && make install

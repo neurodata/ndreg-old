@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.6)
-project(ndreg)
+project(ndreg-old)
 
 set(PACKAGE_VERSION "0.0.1")
 
@@ -20,7 +20,7 @@ set(SETUP_PY "${CMAKE_CURRENT_BINARY_DIR}/setup.py")
 configure_file(${SETUP_PY_IN} ${SETUP_PY})
 
 # Copy python source files to binary directory
-set(PY_FILENAME_LIST "ndreg.py;landmarks.py;__init__.py")
+set(PY_FILENAME_LIST "ndreg-old.py;landmarks.py;__init__.py")
 
 foreach(FILENAME ${PY_FILENAME_LIST})
   set(SRC_PY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/ndreg/${FILENAME})
